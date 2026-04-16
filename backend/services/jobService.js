@@ -5,36 +5,29 @@ const mongoose = require('mongoose');
 class JobService {
   /**
    * Create a new job posting
-   * @param {Object} jobData - Job data
-   * @param {String} recruiterId - Recruiter ID
-   * @returns {Promise<Object>} Created job
    */
   async createJob(recruiterId, jobData) {
     try {
-      // Verify recruiter exists
-
       if (!mongoose.Types.ObjectId.isValid(recruiterId)) {
-        const error = new Error('invalid id');
-        error.statusCode = 404;
+        const error = new Error('Invalid recruiter ID');
+        error.statusCode = 400;
         throw error;
       }
-      const recruiter = await User.findOne({ _id: recruiterId, role: 'recruiter' });
 
+      const recruiter = await User.findOne({ _id: recruiterId, role: 'recruiter' });
       if (!recruiter) {
         const error = new Error('Recruiter not found');
         error.statusCode = 404;
         throw error;
       }
 
-      // Create job
       const job = new Job({
         ...jobData,
         recruiterId,
-        status: jobData.status || 'active'
+        status: jobData.status || 'active',
       });
 
       await job.save();
-
       return job;
     } catch (error) {
       throw error;
@@ -43,8 +36,6 @@ class JobService {
 
   /**
    * Get all active jobs with optional filters
-   * @param {Object} filters - Optional filters for jobs
-   * @returns {Promise<Array>} Array of jobs
    */
   async getActiveJobs(filters = {}) {
     try {
@@ -55,68 +46,72 @@ class JobService {
   }
 
   /**
-   * Get job by ID
-   * @param {String} jobId - Job ID
-   * @returns {Promise<Object>} Job object
+   * Get job by ID.
+   * When fetchForEdit = true, interviewQuestions are included (needed by the edit form).
+   * Default keeps them excluded for the public detail view.
    */
-  async getJobById(jobId, recruiterId) {
+  async getJobById(jobId, { fetchForEdit = false } = {}) {
     try {
-      const job = await Job.findById(jobId)
-        .populate('recruiterId', 'name profileData.company')
-        .select('-interviewQuestions');
+      let query = Job.findById(jobId)
+        .populate('recruiterId', 'name profileData.company');
 
-      if (!job) {
-        return {
-          status: 'error',
-          message: 'Job not found',
-          data: null
-        };
+      // Only strip interviewQuestions for the public view
+      if (!fetchForEdit) {
+        query = query.select('-interviewQuestions');
       }
 
-      // Increment view count
-      await job.incrementViewCount();
+      const job = await query;
 
-      return {
-        status: 'success',
-        message: 'Job retrieved successfully',
-        data: job
-      };
+      if (!job) {
+        return { status: 'error', message: 'Job not found', data: null };
+      }
+
+      // Increment view count only on public views, not edit fetches
+      if (!fetchForEdit) {
+        await job.incrementViewCount();
+      }
+
+      return { status: 'success', message: 'Job retrieved successfully', data: job };
     } catch (error) {
       return {
         status: 'error',
         message: error.message || 'Internal server error',
-        data: null
+        data: null,
       };
     }
   }
 
   /**
    * Get jobs posted by a recruiter
-   * @param {String} recruiterId - Recruiter ID
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>} Array of jobs
+   * BUG FIX: was Job.find(query.recruiterId) — now correctly Job.find(query)
    */
   async getRecruiterJobs(recruiterId, filters = {}) {
-    try {
-      const query = { recruiterId };
-      console.log(query)
 
-      if (filters.status) {
-        query.status = filters.status;
-      }
+  const id = typeof recruiterId === 'object'
+    ? recruiterId.recruiterId
+    : recruiterId;
 
-      return await Job.find(query.recruiterId).sort({ createdAt: -1 });
-    } catch (error) {
-      throw error;
-    }
+  console.log('JobService.getRecruiterJobs called with recruiterId:', id, 'filters:', filters);
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    const error = new Error('Invalid recruiter ID');
+    error.statusCode = 400;
+    throw error;
   }
+
+  const query = { recruiterId: id };
+
+  if (filters.status) {
+    query.status = filters.status;
+  }
+
+  return await Job.find(query)
+    .select('-interviewQuestions')
+    .sort({ createdAt: -1 });
+}
 
   /**
    * Update job
-   * @param {String} jobId - Job ID
-   * @param {String} recruiterId - Recruiter ID
-   * @param {Object} updateData - Data to update
-   * @returns {Promise<Object>} Updated job
    */
   async updateJob(jobId, recruiterId, updateData) {
     try {
@@ -127,23 +122,24 @@ class JobService {
         error.statusCode = 404;
         throw error;
       }
-
-      // Check if recruiter owns the job
+      console.log(`Comparing job recruiter ID ${job.recruiterId} with provided recruiter ID ${recruiterId}`);
+      console.log(job.recruiterId.toString(), recruiterId.toString());
       if (job.recruiterId.toString() !== recruiterId.toString()) {
         const error = new Error('Not authorized to update this job');
         error.statusCode = 403;
         throw error;
       }
 
-      // Fields that can be updated
       const allowedUpdates = [
         'title',
         'description',
         'requirements',
         'location',
         'salary',
+        'salaryRange',
         'status',
         'interviewQuestions',
+        'interviewDuration',
         'jobType',
         'experienceLevel',
         'department',
@@ -152,10 +148,9 @@ class JobService {
         'applicationDeadline',
         'isUrgent',
         'tags',
-        'company'
+        'company',
       ];
 
-      // Update job with allowed fields
       allowedUpdates.forEach(field => {
         if (updateData[field] !== undefined) {
           job[field] = updateData[field];
@@ -163,7 +158,6 @@ class JobService {
       });
 
       await job.save();
-
       return job;
     } catch (error) {
       throw error;
@@ -171,10 +165,7 @@ class JobService {
   }
 
   /**
-   * Delete job
-   * @param {String} jobId - Job ID
-   * @param {String} recruiterId - Recruiter ID
-   * @returns {Promise<boolean>} Success status
+   * Delete (archive) job
    */
   async deleteJob(jobId, recruiterId) {
     try {
@@ -186,17 +177,14 @@ class JobService {
         throw error;
       }
 
-      // Check if recruiter owns the job
       if (job.recruiterId.toString() !== recruiterId.toString()) {
         const error = new Error('Not authorized to delete this job');
         error.statusCode = 403;
         throw error;
       }
 
-      // Instead of deleting, archive the job
       job.status = 'archived';
       await job.save();
-
       return true;
     } catch (error) {
       throw error;
@@ -205,9 +193,6 @@ class JobService {
 
   /**
    * Search jobs by keyword
-   * @param {String} keyword - Search keyword
-   * @param {Object} filters - Optional filters
-   * @returns {Promise<Array>} Array of jobs
    */
   async searchJobs(keyword, filters = {}) {
     try {
@@ -219,11 +204,7 @@ class JobService {
   }
 
   /**
-   * Generate interview questions for a job
-   * @param {String} jobId - Job ID
-   * @param {Array} questions - Array of questions
-   * @param {String} recruiterId - Recruiter ID
-   * @returns {Promise<Object>} Updated job
+   * Add / replace interview questions for a job
    */
   async addInterviewQuestions(jobId, questions, recruiterId) {
     try {
@@ -235,49 +216,47 @@ class JobService {
         throw error;
       }
 
-      // Check if recruiter owns the job
       if (job.recruiterId.toString() !== recruiterId.toString()) {
         const error = new Error('Not authorized to update this job');
         error.statusCode = 403;
         throw error;
       }
 
-      // Validate questions
       if (!Array.isArray(questions) || questions.length === 0) {
         const error = new Error('Questions must be a non-empty array');
         error.statusCode = 400;
         throw error;
       }
 
-      // Format questions
-      const formattedQuestions = questions.map(q => {
-        return typeof q === 'string'
-          ? { question: q, category: 'general' }
-          : q;
-      });
+      job.interviewQuestions = questions.map(q =>
+        typeof q === 'string' ? { question: q, category: 'general' } : q
+      );
 
-      job.interviewQuestions = formattedQuestions;
       await job.save();
-
       return job;
     } catch (error) {
       throw error;
     }
   }
 
+  /**
+   * Get all jobs (admin / paginated recruiter list)
+   */
   async getAllJobs(filters, options) {
     try {
       const res = await Job.find(filters)
-        .select("-interviewQuestions")
+        .select('-interviewQuestions')
         .skip((options.page - 1) * options.limit)
         .limit(options.limit)
         .sort({ [options.sortBy]: options.sortOrder === 'asc' ? 1 : -1 });
-      console.log(res);
+
+      const total = await Job.countDocuments(filters);
+
       return {
-        jobs: res,
+        jobs:        res,
         currentPage: options.page,
-        totalPages: Math.ceil(await Job.countDocuments(filters) / options.limit),
-        totalJobs: await Job.countDocuments(filters)
+        totalPages:  Math.ceil(total / options.limit),
+        totalJobs:   total,
       };
     } catch (error) {
       throw error;
