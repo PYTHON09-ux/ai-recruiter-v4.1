@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
 const jobSchema = new mongoose.Schema({
+  viewedBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   title: {
     type: String,
     required: true,
@@ -86,8 +90,8 @@ const jobSchema = new mongoose.Schema({
   },
 
   interviewDuration: {
-      type: Number,
-      default: null
+    type: Number,
+    default: null
   },
 
   applicationDeadline: {
@@ -151,9 +155,16 @@ jobSchema.methods.incrementApplicationCount = async function () {
 };
 
 // Increment view count
-jobSchema.methods.incrementViewCount = async function () {
-  this.viewCount += 1;
-  await this.save();
+jobSchema.methods.incrementViewCount = async function (userId) {
+  if (!userId) return;
+
+  const alreadyViewed = this.viewedBy.includes(userId);
+
+  if (!alreadyViewed) {
+    this.viewCount += 1;
+    this.viewedBy.push(userId);
+    await this.save();
+  }
 };
 
 // Check if job is active
