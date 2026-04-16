@@ -70,17 +70,20 @@ router.get('/recruiter/my-jobs', auth, authorize('recruiter'), queryValidations.
     console.log('Fetching jobs for recruiter ID:', req.userId);
     const { page = 1, limit = 10, status } = req.query;
 
-    const filters = {
-      recruiterId: req.userId,
-      ...(status && { status })
-    };
+    // const filters = {
+    //   recruiterId: req.userId,
+    //   ...(status && { status })
+    // };
 
     const options = {
       page: parseInt(page),
       limit: Math.min(parseInt(limit), 50)
     };
 
-    const result = await JobService.getRecruiterJobs(filters, options,);
+    const result = await JobService.getRecruiterJobs(req.userId, {
+  status,
+  ...options
+});
     console.log(result)
     res.status(200).json({
       success: true,
@@ -147,7 +150,11 @@ router.post('/', auth, authorize('recruiter'), jobValidations.create, async (req
 // Update job (recruiter only, own jobs)
 router.put('/:id', auth, authorize('recruiter'), jobValidations.update, async (req, res, next) => {
   try {
-    const job = await JobService.updateJob(req.params.id, req.body, req.userId);
+    const job = await JobService.updateJob(
+      req.params.id,
+      req.userId,
+      req.body
+    );
 
     if (!job) {
       return res.status(404).json({
