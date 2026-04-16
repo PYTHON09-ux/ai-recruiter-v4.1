@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import jobService from '../../services/jobService';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 
 // ─── Shared field styles ──────────────────────────────────────────────────────
@@ -10,6 +10,24 @@ const INPUT  = "w-full px-4 py-3 text-sm border border-gray-200 rounded-xl bg-gr
 const SELECT = "w-full px-4 py-3 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all font-medium text-gray-900";
 const LABEL  = "block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5";
 
+const EMPTY_FORM = {
+  title:               '',
+  description:         '',
+  requirements:        '',
+  location:            '',
+  jobType:             'full-time',
+  experienceLevel:     'mid',
+  status:              'active',
+  salaryRange:         { min: '', max: '', currency: 'USD' },
+  skills:              [],
+  benefits:            [],
+  company:             { name: '', website: '', industry: '' },
+  applicationDeadline: '',
+  interviewDuration:   '',
+  interviewQuestions:  [],
+};
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
 function Section({ title, icon, children, hint }) {
   return (
     <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
@@ -35,30 +53,29 @@ function Field({ label, children, hint, span2 = false }) {
   );
 }
 
-// ─── Tag chip (skill / benefit / question) ────────────────────────────────────
-function Tag({ label, accent = 'indigo', onRemove, prefix }) {
+function Tag({ label, accent = 'indigo', onRemove }) {
   const styles = {
-    indigo: 'bg-indigo-50 text-indigo-700',
+    indigo:  'bg-indigo-50 text-indigo-700',
     emerald: 'bg-emerald-50 text-emerald-700',
-    purple: 'bg-purple-50 text-purple-700',
-    amber: 'bg-amber-50 text-amber-700',
+    purple:  'bg-purple-50 text-purple-700',
+    amber:   'bg-amber-50 text-amber-700',
   };
   return (
     <span className={`inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-lg text-xs font-bold ${styles[accent]}`}>
-      {prefix && <span className="opacity-60">{prefix}</span>}
       {label}
-      <button type="button" onClick={onRemove}
-        className="opacity-50 hover:opacity-100 transition-opacity ml-0.5">
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      {onRemove && (
+        <button type="button" onClick={onRemove}
+          className="opacity-50 hover:opacity-100 transition-opacity ml-0.5">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
     </span>
   );
 }
 
-// ─── Adder row (input + button) ───────────────────────────────────────────────
-function Adder({ value, onChange, onAdd, placeholder, prefix, prefixValue, onPrefixChange, prefixOptions }) {
+function Adder({ value, onChange, onAdd, placeholder, prefixValue, onPrefixChange, prefixOptions }) {
   return (
     <div className="flex gap-2">
       {prefixOptions && (
@@ -68,12 +85,9 @@ function Adder({ value, onChange, onAdd, placeholder, prefix, prefixValue, onPre
         </select>
       )}
       <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
+        type="text" value={value} onChange={e => onChange(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } }}
-        placeholder={placeholder}
-        className={`${INPUT} flex-1`}
+        placeholder={placeholder} className={`${INPUT} flex-1`}
       />
       <button type="button" onClick={onAdd}
         className="inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold bg-indigo-600 text-white rounded-xl hover:bg-indigo-500 transition shrink-0">
@@ -82,6 +96,68 @@ function Adder({ value, onChange, onAdd, placeholder, prefix, prefixValue, onPre
         </svg>
         Add
       </button>
+    </div>
+  );
+}
+
+// ─── Delete Confirmation Dialog ───────────────────────────────────────────────
+function DeleteDialog({ jobTitle, onConfirm, onCancel, isDeleting }) {
+  useEffect(() => {
+    const fn = (e) => { if (e.key === 'Escape') onCancel(); };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={onCancel}>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 8 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Icon */}
+        <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        </div>
+
+        <h2 className="text-lg font-black text-gray-900 text-center mb-1">Delete Job Posting?</h2>
+        <p className="text-sm text-gray-500 text-center mb-1">
+          You're about to delete
+        </p>
+        <p className="text-sm font-bold text-gray-800 text-center mb-4 truncate px-4">
+          "{jobTitle}"
+        </p>
+        <p className="text-xs text-gray-400 text-center mb-6">
+          This will archive the job and it will no longer be visible to candidates.
+          This action cannot be undone.
+        </p>
+
+        <div className="flex gap-3">
+          <button type="button" onClick={onCancel}
+            className="flex-1 px-4 py-2.5 text-sm font-semibold border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={isDeleting}
+            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-bold bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition">
+            {isDeleting ? (
+              <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Deleting…</>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Yes, Delete
+              </>
+            )}
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }
@@ -97,36 +173,76 @@ const qAccent = (type) => Q_TYPES.find(t => t.value === type)?.accent || 'indigo
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function JobCreationPage() {
-  const navigate     = useNavigate();
+  const navigate        = useNavigate();
+  const { id }          = useParams();                   // present on edit route: /recruiter/jobs/:id/edit
+  const isEditMode      = Boolean(id);
   const { currentUser } = useAuth();
-  const [isLoading, setIsLoading] = useState(false);
+
+  const [isLoading,     setIsLoading]     = useState(false);
+  const [isFetching,    setIsFetching]    = useState(isEditMode);
+  const [isDeleting,    setIsDeleting]    = useState(false);
+  const [showDeleteDlg, setShowDeleteDlg] = useState(false);
 
   const [formData, setFormData] = useState({
-    // recruiterId comes from the JWT on the backend — no need to send it from frontend
-    title:              '',
-    description:        '',
-    requirements:       '',
-    location:           '',
-    jobType:            'full-time',
-    experienceLevel:    'mid',
-    salaryRange:        { min: '', max: '', currency: 'USD' },
-    skills:             [],
-    benefits:           [],
+    ...EMPTY_FORM,
     company: {
       name:     currentUser?.profileData?.company  || '',
       website:  currentUser?.profileData?.website  || '',
       industry: currentUser?.profileData?.industry || '',
     },
-    applicationDeadline: '',
-    interviewDuration:   '',
-    interviewQuestions:  [],
   });
 
   const [newSkill,    setNewSkill]    = useState('');
   const [newBenefit,  setNewBenefit]  = useState('');
   const [newQuestion, setNewQuestion] = useState({ question: '', type: 'technical' });
 
-  // ── Generic field handler ────────────────────────────────────────────────
+  // ── Load existing job in edit mode ───────────────────────────────────────
+  useEffect(() => {
+    if (!isEditMode) return;
+    (async () => {
+      try {
+        setIsFetching(true);
+        const res  = await jobService.getJobById(id);
+        const job  = res?.data?.data || res?.data || res;
+        if (!job) { toast.error('Job not found'); navigate('/recruiter/jobs'); return; }
+
+        setFormData({
+          title:               job.title               || '',
+          description:         job.description         || '',
+          requirements:        job.requirements        || '',
+          location:            job.location            || '',
+          jobType:             job.jobType             || 'full-time',
+          experienceLevel:     job.experienceLevel     || 'mid',
+          status:              job.status              || 'active',
+          salaryRange: {
+            min:      job.salaryRange?.min      ?? '',
+            max:      job.salaryRange?.max      ?? '',
+            currency: job.salaryRange?.currency || 'USD',
+          },
+          skills:   Array.isArray(job.skills)   ? job.skills   : [],
+          benefits: Array.isArray(job.benefits) ? job.benefits : [],
+          company: {
+            name:     job.company?.name     || '',
+            website:  job.company?.website  || '',
+            industry: job.company?.industry || '',
+          },
+          applicationDeadline: job.applicationDeadline
+            ? new Date(job.applicationDeadline).toISOString().split('T')[0]
+            : '',
+          interviewDuration: job.interviewDuration || '',
+          // interviewQuestions are excluded from getJobById select — fetch separately
+          interviewQuestions: Array.isArray(job.interviewQuestions) ? job.interviewQuestions : [],
+        });
+      } catch (e) {
+        console.error(e);
+        toast.error('Failed to load job details');
+      } finally {
+        setIsFetching(false);
+      }
+    })();
+  }, [id, isEditMode]);
+
+  // ── Generic field handler ─────────────────────────────────────────────────
   const handle = (e) => {
     const { name, value } = e.target;
     if (name.includes('.')) {
@@ -137,7 +253,7 @@ export default function JobCreationPage() {
     }
   };
 
-  // ── Skills ───────────────────────────────────────────────────────────────
+  // ── Skills ────────────────────────────────────────────────────────────────
   const addSkill = () => {
     const sk = newSkill.trim();
     if (!sk || formData.skills.includes(sk)) return;
@@ -147,14 +263,13 @@ export default function JobCreationPage() {
   const removeSkill = (sk) =>
     setFormData(p => ({ ...p, skills: p.skills.filter(s => s !== sk) }));
 
-  // ── Benefits ─────────────────────────────────────────────────────────────
+  // ── Benefits ──────────────────────────────────────────────────────────────
   const addBenefit = () => {
     const b = newBenefit.trim();
     if (!b || formData.benefits.includes(b)) return;
     setFormData(p => ({ ...p, benefits: [...p.benefits, b] }));
     setNewBenefit('');
   };
-  // BUG FIX: original called removeSkill(skill) instead of removeBenefit(benefit)
   const removeBenefit = (b) =>
     setFormData(p => ({ ...p, benefits: p.benefits.filter(x => x !== b) }));
 
@@ -173,7 +288,7 @@ export default function JobCreationPage() {
   const removeQuestion = (i) =>
     setFormData(p => ({ ...p, interviewQuestions: p.interviewQuestions.filter((_, idx) => idx !== i) }));
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // ── Submit (create or update) ─────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -194,18 +309,53 @@ export default function JobCreationPage() {
           max: formData.salaryRange.max ? parseInt(formData.salaryRange.max) : undefined,
         },
       };
-      await jobService.createJob(jobData);
-      toast.success('Job posted successfully!');
-      navigate('/recruiter/dashboard');
+
+      if (isEditMode) {
+        await jobService.updateJob(id, jobData);
+        toast.success('Job updated successfully!');
+        navigate(`/recruiter/jobs/${id}`);
+      } else {
+        await jobService.createJob(jobData);
+        toast.success('Job posted successfully!');
+        navigate('/recruiter/jobs');
+      }
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.message || 'Failed to create job');
+      toast.error(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} job`);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // ── Delete ────────────────────────────────────────────────────────────────
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      await jobService.deleteJob(id);
+      toast.success('Job deleted successfully');
+      navigate('/recruiter/jobs');
+    } catch (err) {
+      console.error(err);
+      toast.error(err.response?.data?.message || 'Failed to delete job');
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDlg(false);
+    }
+  };
+
   const today = new Date().toISOString().split('T')[0];
+
+  // ── Loading skeleton ──────────────────────────────────────────────────────
+  if (isFetching) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-10 h-10 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+          <p className="text-sm text-gray-400">Loading job details…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -216,22 +366,47 @@ export default function JobCreationPage() {
 
       <div className="jc-root max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
 
-        {/* Header */}
+        {/* ── Header ── */}
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="mb-8"
         >
-          <button onClick={() => navigate('/recruiter/dashboard')}
+          <button onClick={() => navigate(isEditMode ? `/recruiter/jobs/${id}` : '/recruiter/jobs')}
             className="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-indigo-600 font-semibold transition mb-5">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Dashboard
+            {isEditMode ? 'Back to Job' : 'Back to Jobs'}
           </button>
-          <h1 className="text-2xl font-black text-gray-900 tracking-tight">Post a New Job</h1>
-          <p className="text-sm text-gray-400 mt-1">Fill in the details to attract the right candidates.</p>
+
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-black text-gray-900 tracking-tight">
+                {isEditMode ? 'Edit Job Posting' : 'Post a New Job'}
+              </h1>
+              <p className="text-sm text-gray-400 mt-1">
+                {isEditMode
+                  ? 'Update the details below — changes save immediately.'
+                  : 'Fill in the details to attract the right candidates.'}
+              </p>
+            </div>
+
+            {/* Delete button — edit mode only */}
+            {isEditMode && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteDlg(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-red-600 border border-red-200 bg-red-50 rounded-xl hover:bg-red-100 hover:border-red-300 transition shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete Job
+              </button>
+            )}
+          </div>
         </motion.div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -278,6 +453,17 @@ export default function JobCreationPage() {
                   <input type="date" name="applicationDeadline" value={formData.applicationDeadline}
                     onChange={handle} min={today} className={INPUT} required />
                 </Field>
+
+                {/* Status — only shown in edit mode */}
+                {isEditMode && (
+                  <Field label="Status">
+                    <select name="status" value={formData.status} onChange={handle} className={SELECT}>
+                      <option value="active">Active</option>
+                      <option value="paused">Paused</option>
+                      <option value="closed">Closed</option>
+                    </select>
+                  </Field>
+                )}
 
                 <Field label="Description *" span2>
                   <textarea name="description" value={formData.description} onChange={handle}
@@ -383,7 +569,6 @@ export default function JobCreationPage() {
                 placeholder="Add a benefit and press Enter (e.g. Health Insurance, Remote Work)" />
               {formData.benefits.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {/* BUG FIX: was calling removeSkill(skill) — now correctly calls removeBenefit(b) */}
                   {formData.benefits.map((b, i) => (
                     <Tag key={i} label={b} accent="emerald" onRemove={() => removeBenefit(b)} />
                   ))}
@@ -432,7 +617,7 @@ export default function JobCreationPage() {
                 prefixOptions={Q_TYPES.map(t => ({ value: t.value, label: t.label }))}
               />
 
-              {formData.interviewQuestions.length > 0 && (
+              {formData.interviewQuestions.length > 0 ? (
                 <div className="space-y-2 mt-5">
                   {formData.interviewQuestions.map((q, i) => (
                     <motion.div
@@ -444,7 +629,7 @@ export default function JobCreationPage() {
                     >
                       <span className="text-xs font-bold text-gray-400 mt-0.5 shrink-0 w-5 text-right">{i + 1}.</span>
                       <div className="flex-1 min-w-0">
-                        <Tag label={q.type} accent={qAccent(q.type)} onRemove={null} />
+                        <Tag label={q.type || q.category || 'general'} accent={qAccent(q.type || q.category)} />
                         <p className="text-sm text-gray-800 font-medium mt-2 leading-snug">{q.question}</p>
                       </div>
                       <button type="button" onClick={() => removeQuestion(i)}
@@ -456,9 +641,7 @@ export default function JobCreationPage() {
                     </motion.div>
                   ))}
                 </div>
-              )}
-
-              {formData.interviewQuestions.length === 0 && (
+              ) : (
                 <div className="mt-4 flex items-center gap-3 p-4 bg-amber-50 border border-amber-100 rounded-xl">
                   <svg className="w-5 h-5 text-amber-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -471,9 +654,10 @@ export default function JobCreationPage() {
             </Section>
           </motion.div>
 
-          {/* ── Submit ── */}
+          {/* ── Submit / Cancel ── */}
           <div className="flex items-center justify-end gap-3 pb-6">
-            <button type="button" onClick={() => navigate('/recruiter/dashboard')}
+            <button type="button"
+              onClick={() => navigate(isEditMode ? `/recruiter/jobs/${id}` : '/recruiter/jobs')}
               className="px-5 py-2.5 text-sm font-semibold border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition">
               Cancel
             </button>
@@ -483,20 +667,32 @@ export default function JobCreationPage() {
               {isLoading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Posting…
+                  {isEditMode ? 'Saving…' : 'Posting…'}
                 </>
               ) : (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Post Job
+                  {isEditMode ? 'Save Changes' : 'Post Job'}
                 </>
               )}
             </motion.button>
           </div>
         </form>
       </div>
+
+      {/* ── Delete confirmation dialog ── */}
+      <AnimatePresence>
+        {showDeleteDlg && (
+          <DeleteDialog
+            jobTitle={formData.title}
+            onConfirm={handleDelete}
+            onCancel={() => setShowDeleteDlg(false)}
+            isDeleting={isDeleting}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
