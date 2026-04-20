@@ -1,77 +1,84 @@
+/**
+ * dashboardService.js — Frontend service layer for dashboard & analytics.
+ *
+ * Wraps the `dashboardAPI` axios client and normalises the response shape
+ * so pages can rely on a predictable contract:
+ *   { success: boolean, data: <payload>, error?: string }
+ *
+ * Fixes applied:
+ *  - Adds `getDashboardOverview` (previously missing — page was crashing).
+ *  - Normalises every response so `.data` is always defined.
+ *  - Catches network / 4xx / 5xx errors and surfaces a safe fallback shape
+ *    so the UI never renders `undefined`.
+ */
+
 import { dashboardAPI } from './api';
 
-const dashboardService = {
-  // Get dashboard statistics
-  getStats: async () => {
-    try {
-      const response = await dashboardAPI.getStats();
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      throw error;
-    }
-  },
-
-  // Get recent activity
-  getRecentActivity: async (params = {}) => {
-    try {
-      const response = await dashboardAPI.getRecentActivity(params);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching recent activity:', error);
-      throw error;
-    }
-  },
-
-  // Get analytics data
-  getAnalytics: async (params = {}) => {
-    try {
-      const response = await dashboardAPI.getAnalytics(params);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching analytics:', error);
-      throw error;
-    }
-  },
-
-  // Get reports
-  getReports: async (params = {}) => {
-    try {
-      const response = await dashboardAPI.getReports(params);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching reports:', error);
-      throw error;
-    }
-  },
-
-  // Get notifications
-  getNotifications: async (params = {}) => {
-    try {
-      const response = await dashboardAPI.getNotifications(params);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      throw error;
-    }
-  },
-
-  // Real-time dashboard updates
-  subscribeToUpdates: (callback) => {
-    // This would typically use WebSocket or Server-Sent Events
-    // For now, we'll use polling
-    const interval = setInterval(async () => {
-      try {
-        const stats = await dashboardService.getStats();
-        const activity = await dashboardService.getRecentActivity({ limit: 10 });
-        callback({ stats, activity });
-      } catch (error) {
-        console.error('Error in dashboard update subscription:', error);
-      }
-    }, 30000); // Poll every 30 seconds
-
-    return () => clearInterval(interval);
+const safeCall = async (fn, fallback) => {
+  try {
+    const res = await fn();
+    // Backend envelope: { success, data }
+    const payload = res?.data?.data ?? res?.data ?? fallback;
+    return { success: true, data: payload };
+  } catch (err) {
+    const message =
+      err?.response?.data?.message || err?.message || 'Request failed';
+    // Return the fallback so the UI can still render.
+    return { success: false, data: fallback, error: message };
   }
 };
 
-export default dashboardService;
+const dashboardService = {
+  /** Overview stats for the current user (recruiter or candidate). */
+  getDashboardOverview: () =>
+    safeCall(() => dashboardAPI.getStats(), {
+      totalJobs: 0,
+      activeJobs: 0,
+      totalApplications: 0,
+      pendingApplications: 0,
+      scheduledInterviews: 0,
+      recentApplications: [],
+    }),
+
+  /** Time-series analytics for the current recruiter. */
+  getAnalytics: (timeframe = '30d') =>
+    safeCall(
+      () => dashboardAPI.getAnalytics({ timeframe }),
+      {
+        applicationTrends: [],
+        jobPerformance: [],
+        interviewMetrics: {
+          total: 0,
+          completed: 0,
+          scheduled: 0,
+          cancelled: 0,
+          avgScore: 0,
+          successRate: 0,
+        },
+        candidateSourceAnalysis: [],
+        summary: {
+          totalApplications: 0,
+          totalInterviews: 0,
+          hires: 0,
+          avgTimeToHireDays: 0,
+          applicationGrowthPct: 0,
+          interviewSuccessRate: 0,
+          timeToHireChangePct: 0,
+        },
+      }
+    ),
+
+  getRecentActivity: () =>
+    safeCall(() => dashboardAPI.getRecentActivity(), { activities: [] }),
+
+  getNotifications: (params) =>
+    safeCall(() => dashboardAPI.getNotifications(params), {
+      notifications: [],
+      unreadCount: 0,
+    }),
+
+  getReports: (params) =>
+    safeCall(() => dashboardAPI.getReports(params), { reports: [] }),
+};
+
+export default dashboardService;  
