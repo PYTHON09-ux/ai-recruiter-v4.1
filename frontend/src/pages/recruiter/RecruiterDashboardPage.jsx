@@ -23,10 +23,10 @@ import toast from 'react-hot-toast';
 const fmtDate = (d) =>
   d
     ? new Date(d).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    })
     : '—';
 
 const getDaysAgo = (date) => {
@@ -66,14 +66,14 @@ const avatarGradient = (name = '') => {
 
 // ─── Status config ────────────────────────────────────────────────────────────
 const APP_STATUS = {
-  pending:             { label: 'Pending',        dot: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
-  reviewing:           { label: 'Reviewing',      dot: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
-  shortlisted:         { label: 'Shortlisted',    dot: '#10b981', bg: '#d1fae5', text: '#065f46' },
+  pending: { label: 'Pending', dot: '#f59e0b', bg: '#fef3c7', text: '#92400e' },
+  reviewing: { label: 'Reviewing', dot: '#3b82f6', bg: '#dbeafe', text: '#1e40af' },
+  shortlisted: { label: 'Shortlisted', dot: '#10b981', bg: '#d1fae5', text: '#065f46' },
   interview_scheduled: { label: 'Int. Scheduled', dot: '#8b5cf6', bg: '#ede9fe', text: '#5b21b6' },
   interview_completed: { label: 'Int. Completed', dot: '#6366f1', bg: '#e0e7ff', text: '#3730a3' },
-  interviewed:         { label: 'Interviewed',    dot: '#6366f1', bg: '#e0e7ff', text: '#3730a3' },
-  hired:               { label: 'Hired',          dot: '#059669', bg: '#d1fae5', text: '#064e3b' },
-  rejected:            { label: 'Rejected',       dot: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
+  interviewed: { label: 'Interviewed', dot: '#6366f1', bg: '#e0e7ff', text: '#3730a3' },
+  hired: { label: 'Hired', dot: '#059669', bg: '#d1fae5', text: '#064e3b' },
+  rejected: { label: 'Rejected', dot: '#ef4444', bg: '#fee2e2', text: '#991b1b' },
 };
 
 function StatusBadge({ status }) {
@@ -267,8 +267,8 @@ export default function RecruiterDashboardPage() {
     hour < 12
       ? 'Good morning'
       : hour < 18
-      ? 'Good afternoon'
-      : 'Good evening';
+        ? 'Good afternoon'
+        : 'Good evening';
 
   if (isLoading) {
     return (
@@ -364,10 +364,10 @@ export default function RecruiterDashboardPage() {
 
         {/* ── Stats ──────────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard delay={0.05} accent="#6366f1" icon="💼" label="Total Jobs"     value={stats.totalJobs} />
-          <StatCard delay={0.1}  accent="#10b981" icon="✅" label="Active Jobs"    value={stats.activeJobs} />
-          <StatCard delay={0.15} accent="#8b5cf6" icon="👥" label="Applications"   value={stats.totalApplications} />
-          <StatCard delay={0.2}  accent="#f59e0b" icon="⏳" label="Pending Review" value={stats.pendingApplications} />
+          <StatCard delay={0.05} accent="#6366f1" icon="💼" label="Total Jobs" value={stats.totalJobs} />
+          <StatCard delay={0.1} accent="#10b981" icon="✅" label="Active Jobs" value={stats.activeJobs} />
+          <StatCard delay={0.15} accent="#8b5cf6" icon="👥" label="Applications" value={stats.totalApplications} />
+          <StatCard delay={0.2} accent="#f59e0b" icon="⏳" label="Pending Review" value={stats.pendingApplications} />
         </div>
 
         {/* ── Two-column grid ────────────────────────────────────────────────── */}
@@ -439,11 +439,10 @@ export default function RecruiterDashboardPage() {
                       </p>
                       <div className="flex items-center gap-2 mt-1.5">
                         <span
-                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold ring-1 ring-inset ${
-                            job.status === 'active'
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-bold ring-1 ring-inset ${job.status === 'active'
                               ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/60'
                               : 'bg-gray-100 text-gray-500 ring-gray-200/60'
-                          }`}
+                            }`}
                         >
                           {job.status === 'active'
                             ? '● Active'
@@ -526,9 +525,10 @@ export default function RecruiterDashboardPage() {
               <div className="space-y-2.5">
                 {recentApplications.map((app, i) => {
                   const name =
-                    `${app.candidateId?.firstName || ''} ${
-                      app.candidateId?.lastName || ''
-                    }`.trim() || 'Unknown Candidate';
+                    app.candidateId?.name ||
+                    `${app.candidateId?.firstName || ''} ${app.candidateId?.lastName || ''}`.trim() ||
+                    app.candidateId?.email ||
+                    'Unknown Candidate';
                   const gradient = avatarGradient(name);
                   return (
                     <motion.div
@@ -629,9 +629,9 @@ export default function RecruiterDashboardPage() {
           </div>
           <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { to: '/recruiter/jobs/create', icon: '➕', accent: '#6366f1', title: 'Post New Job',        desc: 'Create a new job posting' },
-              { to: '/recruiter/candidates',  icon: '👥', accent: '#10b981', title: 'Review Applications', desc: 'Manage candidate applications' },
-              { to: '/recruiter/analytics',   icon: '📊', accent: '#f59e0b', title: 'View Analytics',      desc: 'Check recruitment metrics' },
+              { to: '/recruiter/jobs/create', icon: '➕', accent: '#6366f1', title: 'Post New Job', desc: 'Create a new job posting' },
+              { to: '/recruiter/candidates', icon: '👥', accent: '#10b981', title: 'Review Applications', desc: 'Manage candidate applications' },
+              { to: '/recruiter/analytics', icon: '📊', accent: '#f59e0b', title: 'View Analytics', desc: 'Check recruitment metrics' },
             ].map((a) => (
               <motion.div
                 key={a.to}

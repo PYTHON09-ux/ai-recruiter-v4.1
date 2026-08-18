@@ -71,8 +71,8 @@ const NAV = {
     { name: 'Dashboard',    icon: 'home',      path: '/recruiter' },
     { name: 'Create Job',   icon: 'briefcase', path: '/recruiter/jobs/create' },
     { name: 'Candidates',   icon: 'users',     path: '/recruiter/candidates' },
-    { name: 'Applications', icon: 'file',      path: '/recruiter/applications' },
-    { name: 'Interviews',   icon: 'calendar',  path: '/recruiter/interviews' },
+    { name: 'Jobs', icon: 'file',              path: '/recruiter/jobs' },
+    // { name: 'Interviews',   icon: 'calendar',  path: '/recruiter/interviews' },
     { name: 'Analytics',    icon: 'chart',     path: '/recruiter/analytics' },
     { name: 'Profile',      icon: 'user',      path: '/recruiter/profile' },
   ],
@@ -81,7 +81,7 @@ const NAV = {
     { name: 'Find Jobs',       icon: 'search',   path: '/candidate/jobs' },
     { name: 'My Applications', icon: 'file',     path: '/candidate/applications' },
     { name: 'Profile',         icon: 'user',     path: '/candidate/profile' },
-    { name: 'Settings',        icon: 'settings', path: '/candidate/settings' },
+    // { name: 'Settings',        icon: 'settings', path: '/candidate/settings' },
   ],
 };
 

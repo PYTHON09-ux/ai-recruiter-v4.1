@@ -105,13 +105,39 @@ const interviewSchema = new mongoose.Schema({
     avgResponseTime: Number
   },
   aiMetadata: {
-    model: String,
-    version: String,
-    processingTime: Number,
-    confidenceScore: Number,
-    errors: [String]
-  }
-}, {
+  model: String,
+  version: String,
+  processingTime: Number,
+  confidenceScore: Number,
+  errors: [String],
+  
+  // Proctoring data
+  proctoringViolations: [{
+    type: String,
+    severity: { type: String, enum: ['high', 'medium', 'low'] },
+    desc: String,
+    ts: String
+  }],
+  proctoringFlagged: { type: Boolean, default: false },
+  tabSwitchCount:    { type: Number,  default: 0 },
+  terminated:        { type: Boolean, default: false },
+  terminationReason: String,
+  
+  // Scheduling (used by reschedule)
+  scheduledAt:       Date,
+  rescheduleReason:  String,
+  cancellationReason: String,
+  recordingUrl:      String,
+},
+transcript: [{
+  role: { type: String, enum: ['assistant', 'user'] },
+  text: String,
+  question: String,
+  timestamp: Date
+}],
+summary: String,
+},
+ {
   timestamps: true
 });
 

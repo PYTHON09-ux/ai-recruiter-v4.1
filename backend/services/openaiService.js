@@ -8,7 +8,7 @@
 
 const OpenAI = require("openai");
 
-const MODEL = "arcee-ai/trinity-large-preview:free";
+const MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free";
 
 class OpenRouterService {
   constructor() {

@@ -9,7 +9,7 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'sho
 const fmtTime = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const initials = (first = '', last = '') => `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || '?';
 const avatarColor = (name = '') => {
-  const cs = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#3b82f6','#0ea5e9','#ef4444'];
+  const cs = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#0ea5e9', '#ef4444'];
   let h = 0; for (let c of name) h = c.charCodeAt(0) + ((h << 5) - h);
   return cs[Math.abs(h) % cs.length];
 };
@@ -97,20 +97,20 @@ export default function CandidateEvaluationPage() {
   const { id: applicationId } = useParams();
   const navigate = useNavigate();
 
-  const [loading,     setLoading]     = useState(true);
+  const [loading, setLoading] = useState(true);
   const [application, setApplication] = useState(null);
-  const [interview,   setInterview]   = useState(null);
-  const [confirm,     setConfirm]     = useState(null);
+  const [interview, setInterview] = useState(null);
+  const [confirm, setConfirm] = useState(null);
 
   useEffect(() => {
     (async () => {
       try {
         setLoading(true);
-        const appRes  = await applicationService.getApplicationById(applicationId);
+        const appRes = await applicationService.getApplicationById(applicationId);
         setApplication(appRes.data || appRes);
 
         const intRes = await interviewService.getInterviewsByApplication(applicationId);
-        const list   = intRes.data || intRes.interviews || [];
+        const list = intRes.data || intRes.interviews || [];
         if (list.length > 0) setInterview(list[0]);
       } catch (e) {
         console.error(e);
@@ -179,13 +179,15 @@ export default function CandidateEvaluationPage() {
     );
   }
 
-  const cand     = application.candidateId || application.candidate || {};
-  const job      = application.jobId        || application.job        || {};
-  const eval_    = interview?.evaluation    || null;
-  const proct    = interview?.technicalMetadata?.proctoringEvents || [];
+  const cand = application.candidateId || application.candidate || {};
+  const job = application.jobId || application.job || {};
+  const eval_ = interview?.evaluation || null;
+  const proct = interview?.aiMetadata?.proctoringViolations || [];
+  const flagged = interview?.aiMetadata?.proctoringFlagged || false;
+  const tabSwitches = interview?.aiMetadata?.tabSwitchCount || 0;
   const responses = interview?.responses || [];
-  const questions = interview?.questions  || [];
-  const name     = `${cand.fullName}`.trim() || 'Unknown Candidate';
+  const questions = interview?.questions || [];
+  const name = `${cand.fullName}`.trim() || 'Unknown Candidate';
 
   const alreadyDecided = application.status === 'hired' || application.status === 'rejected';
 
@@ -312,7 +314,7 @@ export default function CandidateEvaluationPage() {
             )}
 
             {/* ── Interview Responses ──────────────────────────────────────────── */}
-            {responses.length > 0 && (
+            {/* {responses.length > 0 && (
               <Section title="Interview Responses" icon={
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
@@ -345,20 +347,18 @@ export default function CandidateEvaluationPage() {
                   })}
                 </div>
               </Section>
-            )}
+            )} */}
 
             {/* ── AI Recommendation ────────────────────────────────────────────── */}
             {eval_?.recommendation && (
-              <div className={`rounded-2xl p-6 border-2 ${
-                eval_.recommendation === 'hire'  ? 'bg-emerald-50 border-emerald-200' :
+              <div className={`rounded-2xl p-6 border-2 ${eval_.recommendation === 'hire' ? 'bg-emerald-50 border-emerald-200' :
                 eval_.recommendation === 'maybe' ? 'bg-amber-50 border-amber-200' :
-                                                   'bg-red-50 border-red-200'
-              }`}>
+                  'bg-red-50 border-red-200'
+                }`}>
                 <div className="flex items-start gap-4">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-                    eval_.recommendation === 'hire'  ? 'bg-emerald-100' :
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${eval_.recommendation === 'hire' ? 'bg-emerald-100' :
                     eval_.recommendation === 'maybe' ? 'bg-amber-100' : 'bg-red-100'
-                  }`}>
+                    }`}>
                     {eval_.recommendation === 'hire' ? (
                       <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -376,11 +376,10 @@ export default function CandidateEvaluationPage() {
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-bold uppercase tracking-wider text-gray-500">AI Recommendation</span>
-                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                        eval_.recommendation === 'hire'  ? 'bg-emerald-200 text-emerald-800' :
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${eval_.recommendation === 'hire' ? 'bg-emerald-200 text-emerald-800' :
                         eval_.recommendation === 'maybe' ? 'bg-amber-200 text-amber-800' :
-                                                           'bg-red-200 text-red-800'
-                      }`}>
+                          'bg-red-200 text-red-800'
+                        }`}>
                         {eval_.recommendation.charAt(0).toUpperCase() + eval_.recommendation.slice(1)}
                       </span>
                     </div>
@@ -404,12 +403,17 @@ export default function CandidateEvaluationPage() {
                   </div>
                   {proct.map((ev, i) => (
                     <div key={i} className="flex items-start gap-3 p-3 bg-red-50 border border-red-100 rounded-xl">
-                      <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                      </svg>
+                      <svg className="w-4 h-4 text-amber-500 mt-0.5 shrink-0"/>
                       <div>
-                        <p className="text-sm text-gray-800">{ev.message || ev.description || 'Violation detected'}</p>
-                        {ev.timestamp && <p className="text-xs text-gray-400 mt-0.5">{fmtTime(ev.timestamp)}</p>}
+                        <p className="text-sm font-semibold text-gray-800">{ev.type || 'Violation'}</p>
+                        <p className="text-sm text-gray-600 mt-0.5">{ev.desc}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${ev.severity === 'high' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                            }`}>
+                            {ev.severity}
+                          </span>
+                          {ev.ts && <p className="text-xs text-gray-400">{fmtTime(ev.ts)}</p>}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -461,12 +465,10 @@ export default function CandidateEvaluationPage() {
             </div>
           </Section>
         ) : (
-          <div className={`rounded-2xl p-5 flex items-center gap-4 border-2 ${
-            application.status === 'hired' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
-          }`}>
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
-              application.status === 'hired' ? 'bg-emerald-100' : 'bg-red-100'
+          <div className={`rounded-2xl p-5 flex items-center gap-4 border-2 ${application.status === 'hired' ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'
             }`}>
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${application.status === 'hired' ? 'bg-emerald-100' : 'bg-red-100'
+              }`}>
               {application.status === 'hired' ? (
                 <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />

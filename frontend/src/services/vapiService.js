@@ -16,7 +16,6 @@ localAPI.interceptors.request.use((config) => {
 });
 
 // ─── Vapi Web SDK (browser) ───────────────────────────────────────────────────
-// IMPORTANT: Uses PUBLIC key only — never expose secret key in frontend
 const vapi = new Vapi(import.meta.env.VITE_VAPI_PUBLIC_KEY);
 
 class VapiService {
@@ -67,7 +66,7 @@ IMPORTANT: Do NOT skip any questions. Do NOT go off-topic. Do NOT repeat questio
       },
       voice: {
         provider: '11labs',
-        voiceId: 'paula', // Clear, professional neutral voice
+        voiceId: 'paula',
       },
       transcriber: {
         provider: 'deepgram',
@@ -76,7 +75,7 @@ IMPORTANT: Do NOT skip any questions. Do NOT go off-topic. Do NOT repeat questio
       },
       firstMessage: `Hello ${candidateName}! I'm your AI interviewer for the ${jobTitle} position at ${companyName}. We have about ${duration} minutes together. Please speak clearly and take your time — there's no rush. Ready to begin?`,
       endCallMessage: `Thank you so much for your time today, ${candidateName}. Your responses have been recorded and will be reviewed by the team. We'll be in touch with next steps. Best of luck — have a wonderful day!`,
-      maxDurationSeconds: (duration + 2) * 60, // slight buffer
+      maxDurationSeconds: (duration + 2) * 60,
       recordingEnabled: true,
       endCallPhrases: [
         'end the interview',
@@ -114,7 +113,7 @@ IMPORTANT: Do NOT skip any questions. Do NOT go off-topic. Do NOT repeat questio
     return this.vapi.isMuted();
   }
 
-  // ── Notify YOUR backend that a call started (for webhook correlation) ──────
+  // ── Notify backend that a call started ────────────────────────────────────
   async notifyCallStarted(interviewId, callData) {
     try {
       await localAPI.post('/voice/call-started', {
@@ -124,33 +123,56 @@ IMPORTANT: Do NOT skip any questions. Do NOT go off-topic. Do NOT repeat questio
       });
     } catch (err) {
       console.warn('Could not notify backend of call start:', err.message);
-      // Non-fatal — interview can still proceed
     }
   }
 
-  // ── Save transcript + metadata to your backend after interview ends ────────
-  async saveInterviewResult({ interviewId, transcript, callId, durationSeconds }) {
+  // ── Save transcript + proctoring metadata to backend ──────────────────────
+  async saveInterviewResult({
+    interviewId,
+    transcript,
+    callId,
+    durationSeconds,
+    proctoringViolations,
+    proctoringFlagged,
+    tabSwitchCount,
+    terminated,
+    terminationReason,
+  }) {
     try {
-      console.log(interviewId, transcript, callId, durationSeconds);
+      console.log('[VapiService] Sending interview result:', {
+        interviewId,
+        transcriptLength: transcript?.length,
+        violationsCount: proctoringViolations?.length,
+        proctoringFlagged,
+        tabSwitchCount,
+        terminated,
+        terminationReason,
+      });
+
       const response = await localAPI.post('/voice/save-result', {
         interviewId,
         transcript,
         callId,
         durationSeconds,
         completedAt: new Date().toISOString(),
+        proctoringViolations,
+        proctoringFlagged,
+        tabSwitchCount,
+        terminated,
+        terminationReason,
       });
+
       return response.data;
     } catch (err) {
-      console.error('Failed to save interview result:', err);
+      console.error('[VapiService] Failed to save interview result:', err);
       throw err;
     }
   }
 
-  // ── Validate a magic link token from your backend ─────────────────────────
+  // ── Validate a magic link token ───────────────────────────────────────────
   async validateMagicLink(token) {
     const response = await localAPI.post('/interviews/validate-magic-link', { token });
     return response.data;
-    // Expected shape: { job, candidateName, interviewId, candidateId }
   }
 
   // ── Get interview summary after completion ────────────────────────────────

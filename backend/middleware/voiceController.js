@@ -3,15 +3,6 @@ const OpenAIService = require('../services/openaiService');
 const ApplicationService = require('../services/applicationService');
 const Job = require('../models/Job');
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  POST /api/voice/save-result
-//
-//  Frontend sends:
-//  { interviewId, transcript, callId, durationSeconds, completedAt,
-//    proctoringViolations, proctoringFlagged, tabSwitchCount }
-//
-//  transcript = [{ role: 'assistant'|'user', text, question?, timestamp }]
-// ─────────────────────────────────────────────────────────────────────────────
 async function saveInterviewResult(req, res) {
   try {
     const {
@@ -23,6 +14,8 @@ async function saveInterviewResult(req, res) {
       proctoringViolations,
       proctoringFlagged,
       tabSwitchCount,
+      terminated,
+      terminationReason,
     } = req.body;
 
     if (!interviewId) {
@@ -44,28 +37,34 @@ async function saveInterviewResult(req, res) {
           messages.slice(0, i).reverse().find(m => m.role === 'assistant')?.text ||
           'Interview question';
 
-        interview.addResponse(
-          question,  // questionId key
-          null,      // audioUrl
-          msg.text,  // Vapi STT transcription
-          null       // duration
-        );
+        interview.addResponse(question, null, msg.text, null);
       }
     });
 
-    // ── 2. Build flat transcript string (full conversation) ───────────────────
+    // ── 2. Save structured transcript array ───────────────────────────────────
+    if (messages.length > 0) {
+      interview.transcript = messages
+        .filter(m => m.text?.trim())
+        .map(m => ({
+          role: m.role,
+          text: m.text,
+          question: m.question || null,
+          timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+        }));
+    }
+
+    // ── 3. Build flat transcript string for OpenAI evaluation ─────────────────
     const transcriptString = messages
       .filter(m => m.text?.trim())
       .map(m => `${m.role === 'assistant' ? 'Interviewer' : 'Candidate'}: ${m.text}`)
       .join('\n');
 
-    // ── 3. Send FULL transcript to OpenAI for evaluation ─────────────────────
-    //       Evaluation stored in model via setEvaluation — never returned to frontend
+    // ── 4. Evaluate with OpenAI ───────────────────────────────────────────────
     if (transcriptString) {
       try {
         const job = await Job.findById(interview.jobId);
-        console.log(transcriptString);
-        // evaluateTranscript receives the whole conversation — no Q&A parsing needed
+        console.log('[Voice] Transcript for evaluation:\n', transcriptString);
+
         const evaluationData = await OpenAIService.evaluateTranscript(
           transcriptString,
           job?.title || 'the position',
@@ -73,10 +72,8 @@ async function saveInterviewResult(req, res) {
         );
 
         console.log('[Voice] OpenAI evaluation result:', evaluationData);
-        // setEvaluation stamps evaluatedAt + evaluatedBy:'ai'
         interview.setEvaluation(evaluationData);
 
-        // Generate summary from same transcript
         const summary = await OpenAIService.generateInterviewSummary(
           transcriptString,
           job?.title || 'the position',
@@ -89,23 +86,24 @@ async function saveInterviewResult(req, res) {
       }
     }
 
-    // ── 4. Proctoring metadata ────────────────────────────────────────────────
+    // ── 5. Proctoring metadata ────────────────────────────────────────────────
     interview.technicalMetadata = {
       ...interview.technicalMetadata,
       interruptionCount: tabSwitchCount || 0,
       connectionQuality: proctoringFlagged ? 'flagged' : 'good',
     };
 
-    if (proctoringViolations?.length) {
-      interview.aiMetadata = {
-        ...interview.aiMetadata,
-        errors: proctoringViolations.map(v => `${v.type}: ${v.desc}`),
-      };
-    }
+    interview.aiMetadata = {
+      ...interview.aiMetadata,
+      proctoringViolations: Array.isArray(proctoringViolations) ? proctoringViolations : [],
+      proctoringFlagged:    proctoringFlagged    || false,
+      tabSwitchCount:       tabSwitchCount       || 0,
+      ...(terminated         && { terminated:        true }),
+      ...(terminationReason  && { terminationReason: terminationReason }),
+    };
 
-    // ── 5. Finalise ───────────────────────────────────────────────────────────
-    if (transcriptString) interview.transcript = transcriptString;
-    if (callId)           interview.vapiCallId  = callId;
+    // ── 6. Finalise interview fields ──────────────────────────────────────────
+    if (callId) interview.vapiCallId = callId;
 
     interview.duration    = durationSeconds || 0;
     interview.completedAt = completedAt ? new Date(completedAt) : new Date();
@@ -113,9 +111,9 @@ async function saveInterviewResult(req, res) {
 
     await interview.save();
 
-    // ── 6. Update application status ─────────────────────────────────────────
+    // ── 7. Update application status ─────────────────────────────────────────
     try {
-      await ApplicationService.updateStatus(
+      await ApplicationService.updateApplicationStatus(
         interview.applicationId,
         'interview_completed',
         interview.recruiterId,
@@ -125,7 +123,6 @@ async function saveInterviewResult(req, res) {
       console.warn('[Voice] Application status update failed (non-fatal):', appErr.message);
     }
 
-    // Only success flag — evaluation stays in DB
     return res.status(200).json({ success: true });
 
   } catch (error) {

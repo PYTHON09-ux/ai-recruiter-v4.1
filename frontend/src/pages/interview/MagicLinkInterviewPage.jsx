@@ -7,17 +7,13 @@ import interviewService from '../../services/interviewService';
 
 const MagicLinkInterviewPage = () => {
   const { token } = useParams();
-  const navigate  = useNavigate();
-
-  const [status,            setStatus]            = useState('validating');
-  // 'validating' | 'setup' | 'interview' | 'invalid' | 'completed' | 'error'
-
-  const [interviewData,     setInterviewData]     = useState(null);
-  const [error,             setError]             = useState(null);
-  const [completionResult,  setCompletionResult]  = useState(null);
+  const navigate = useNavigate();
+  const [status, setStatus] = useState('validating');
+  const [interviewData, setInterviewData] = useState(null);
+  const [error, setError] = useState(null);
+  const [completionResult, setCompletionResult] = useState(null);
   const [redirectCountdown, setRedirectCountdown] = useState(8);
 
-  // ── Token validation ───────────────────────────────────────────────────────
   const validateAndLoad = useCallback(async () => {
     try {
       const data = await interviewService.validateMagicLink(token);
@@ -28,7 +24,7 @@ const MagicLinkInterviewPage = () => {
         err?.response?.status === 404 ? 'This interview link does not exist.' :
         err?.response?.status === 410 ? 'This interview link has already been used.' :
         err?.response?.status === 401 ? 'This interview link has expired. Please contact the recruiter for a new one.' :
-        err?.response?.data?.message  || 'Invalid or expired interview link.';
+        err?.response?.data?.message || 'Invalid or expired interview link.';
       setStatus('invalid');
       setError(msg);
     }
@@ -39,7 +35,6 @@ const MagicLinkInterviewPage = () => {
     validateAndLoad();
   }, [token, validateAndLoad]);
 
-  // ── Auto-redirect after completion ────────────────────────────────────────
   useEffect(() => {
     if (status !== 'completed') return;
     const timer = setInterval(() => {
@@ -51,198 +46,148 @@ const MagicLinkInterviewPage = () => {
     return () => clearInterval(timer);
   }, [status, navigate]);
 
-  // ── Handlers ───────────────────────────────────────────────────────────────
   const handleSetupReady = () => setStatus('interview');
-
-  const handleSetupAbort = () => {
-    setStatus('invalid');
-    setError('Interview setup was cancelled. Please use your interview link again when you are ready.');
-  };
-
-  const handleInterviewComplete = (result) => {
-    setCompletionResult(result);
-    setStatus('completed');
-  };
-
-  // FIX: terminated interviews also go to 'completed' screen, not 'error'
-  // The VoiceInterviewComponent now saves data before calling onError,
-  // and passes { terminated: true, result } so we can distinguish the case.
+  const handleSetupAbort = () => { setStatus('invalid'); setError('Interview setup was cancelled. Use your interview link again when you are ready.'); };
+  const handleInterviewComplete = (result) => { setCompletionResult(result); setStatus('completed'); };
   const handleInterviewError = (err) => {
     if (err?.terminated && err?.result) {
-      // Termination due to violation — data was saved, show completion screen
-      setCompletionResult({
-        ...err.result,
-        terminatedEarly: true,
-        terminationReason: err.message?.replace('Terminated: ', ''),
-      });
+      setCompletionResult({ ...err.result, terminatedEarly: true, terminationReason: err.message?.replace('Terminated: ', '') });
       setStatus('completed');
     } else {
-      // Genuine technical error
       setStatus('error');
       setError(err?.message || 'An unexpected error occurred during the interview.');
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  STATES
-  // ─────────────────────────────────────────────────────────────────────────
+  if (status === 'validating') return (
+    <Shell>
+      <div style={{ width: 32, height: 32, border: '2px solid #27272a', borderTopColor: '#71717a', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+      <h2 style={titleStyle}>Verifying your link</h2>
+      <p style={subtitleStyle}>This will only take a moment.</p>
+    </Shell>
+  );
 
-  if (status === 'validating') {
-    return (
-      <FullScreenCard gradient="from-slate-900 to-slate-800">
-        <div className="animate-spin rounded-full h-14 w-14 border-2 border-white/10 border-t-white/80 mx-auto mb-6" />
-        <h2 className="text-xl font-semibold text-white mb-2">Verifying your interview link</h2>
-        <p className="text-white/40 text-sm">This will only take a moment…</p>
-      </FullScreenCard>
-    );
-  }
+  if (status === 'setup' && interviewData) return (
+    <PreInterviewProctorSetup
+      candidateName={interviewData.candidateName}
+      jobTitle={interviewData.job?.title}
+      companyName={interviewData.job?.company?.name}
+      totalQuestions={(interviewData.questions || []).length}
+      durationMins={interviewData.job?.interviewDuration || 10}
+      onReady={handleSetupReady}
+      onAbort={handleSetupAbort}
+    />
+  );
 
-  if (status === 'setup' && interviewData) {
-    return (
-      <PreInterviewProctorSetup
-        candidateName={interviewData.candidateName}
-        jobTitle={interviewData.job?.title}
-        companyName={interviewData.job?.company?.name}
-        totalQuestions={(interviewData.questions || []).length}
-        durationMins={interviewData.job?.interviewDuration || 10}
-        onReady={handleSetupReady}
-        onAbort={handleSetupAbort}
-      />
-    );
-  }
+  if (status === 'interview' && interviewData) return (
+    <VoiceInterviewComponent
+      token={token}
+      jobData={interviewData.job}
+      candidateName={interviewData.candidateName}
+      interviewId={interviewData.interviewId}
+      questions={interviewData.questions || []}
+      onComplete={handleInterviewComplete}
+      onError={handleInterviewError}
+    />
+  );
 
-  if (status === 'interview' && interviewData) {
-    return (
-      <VoiceInterviewComponent
-        token={token}
-        jobData={interviewData.job}
-        candidateName={interviewData.candidateName}
-        interviewId={interviewData.interviewId}
-        questions={interviewData.questions || []}
-        onComplete={handleInterviewComplete}
-        onError={handleInterviewError}
-      />
-    );
-  }
+  if (status === 'invalid') return (
+    <Shell accent="red">
+      <div style={iconCircleStyle('#7f1d1d', '#1a0505')}>
+        <XCircle size={24} color="#f87171" />
+      </div>
+      <h2 style={titleStyle}>Invalid interview link</h2>
+      <p style={subtitleStyle}>{error || 'This link is invalid or has expired. Please contact your recruiter for a new invitation.'}</p>
+      <button style={btnStyle} onClick={() => navigate('/')}>Go to homepage</button>
+    </Shell>
+  );
 
-  if (status === 'invalid') {
-    return (
-      <FullScreenCard gradient="from-rose-950 to-slate-900">
-        <XCircle className="w-16 h-16 text-rose-400 mx-auto mb-6" />
-        <h2 className="text-xl font-semibold text-white mb-3">Invalid Interview Link</h2>
-        <p className="text-white/50 text-sm max-w-sm mx-auto leading-relaxed mb-8">
-          {error || 'This link is invalid or has expired. Please contact your recruiter for a new invitation.'}
-        </p>
-        <button onClick={() => navigate('/')} className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-sm transition-all">
-          Go to Homepage
-        </button>
-      </FullScreenCard>
-    );
-  }
-
-  if (status === 'error') {
-    return (
-      <FullScreenCard gradient="from-amber-950 to-slate-900">
-        <AlertTriangle className="w-16 h-16 text-amber-400 mx-auto mb-6" />
-        <h2 className="text-xl font-semibold text-white mb-3">Something went wrong</h2>
-        <p className="text-white/50 text-sm max-w-sm mx-auto leading-relaxed mb-8">
-          {error || 'An unexpected error occurred. Please try again or contact support.'}
-        </p>
-        <div className="flex gap-3 justify-center">
-          <button onClick={() => window.location.reload()} className="px-6 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-full text-sm transition-all">Try Again</button>
-          <button onClick={() => navigate('/')} className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-sm transition-all">Go Home</button>
-        </div>
-      </FullScreenCard>
-    );
-  }
+  if (status === 'error') return (
+    <Shell accent="amber">
+      <div style={iconCircleStyle('#78350f', '#1a0c00')}>
+        <AlertTriangle size={24} color="#fbbf24" />
+      </div>
+      <h2 style={titleStyle}>Something went wrong</h2>
+      <p style={subtitleStyle}>{error || 'An unexpected error occurred. Please try again or contact support.'}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+        <button style={{ ...btnStyle, background: '#1c0f00', border: '1px solid #854d0e', color: '#fbbf24' }} onClick={() => window.location.reload()}>Try again</button>
+        <button style={btnStyle} onClick={() => navigate('/')}>Go home</button>
+      </div>
+    </Shell>
+  );
 
   if (status === 'completed') {
     const wasTerminated = completionResult?.terminatedEarly;
     return (
-      <FullScreenCard gradient={wasTerminated ? 'from-rose-950 to-slate-900' : 'from-emerald-950 to-slate-900'}>
-        <div className="relative mb-8">
-          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
-            wasTerminated
-              ? 'bg-rose-500/20 shadow-[0_0_40px_rgba(244,63,94,0.3)]'
-              : 'bg-emerald-500/20 shadow-[0_0_40px_rgba(52,211,153,0.3)]'
-          }`}>
-            {wasTerminated
-              ? <AlertTriangle className="w-10 h-10 text-rose-400" />
-              : <CheckCircle className="w-10 h-10 text-emerald-400" />
-            }
-          </div>
+      <Shell accent={wasTerminated ? 'red' : 'green'}>
+        <div style={iconCircleStyle(wasTerminated ? '#7f1d1d' : '#14532d', wasTerminated ? '#1a0505' : '#0a1a0a')}>
+          {wasTerminated ? <AlertTriangle size={24} color="#f87171" /> : <CheckCircle size={24} color="#4ade80" />}
         </div>
-
-        <h2 className="text-2xl font-bold text-white mb-3">
-          {wasTerminated ? 'Interview Terminated' : 'Interview Complete!'}
-        </h2>
-        <p className="text-white/50 text-sm max-w-sm mx-auto leading-relaxed mb-6">
+        <h2 style={titleStyle}>{wasTerminated ? 'Interview terminated' : 'Interview complete'}</h2>
+        <p style={subtitleStyle}>
           {wasTerminated
-            ? `Your interview was terminated due to: ${completionResult.terminationReason}. Your responses up to this point have been saved and will be reviewed.`
-            : 'Thank you for completing your interview. Your responses have been recorded and will be reviewed by the team. Expect feedback within 2–3 business days.'
-          }
+            ? `Your session was terminated due to: ${completionResult.terminationReason}. Your responses up to this point have been saved and will be reviewed.`
+            : 'Thank you for completing your interview. Your responses have been recorded and will be reviewed by the team. Expect feedback within 2–3 business days.'}
         </p>
 
-        {/* Stats */}
         {completionResult && (
-          <div className="flex gap-6 justify-center mb-8">
+          <div style={{ display: 'flex', gap: 20, justifyContent: 'center', margin: '20px 0' }}>
             {completionResult.durationSeconds != null && (
-              <div className="text-center">
-                <p className="text-2xl font-bold text-white">
-                  {Math.floor(completionResult.durationSeconds / 60)}m {completionResult.durationSeconds % 60}s
-                </p>
-                <p className="text-xs text-white/30 mt-1">Duration</p>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 20, fontWeight: 700, color: '#fafafa' }}>{Math.floor(completionResult.durationSeconds / 60)}m {completionResult.durationSeconds % 60}s</p>
+                <p style={{ fontSize: 10, color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 3 }}>Duration</p>
               </div>
             )}
             {completionResult.transcript?.length > 0 && (
-              <div className="text-center">
-                <p className="text-2xl font-bold text-white">
-                  {completionResult.transcript.filter(m => m.role === 'user').length}
-                </p>
-                <p className="text-xs text-white/30 mt-1">Responses</p>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 20, fontWeight: 700, color: '#fafafa' }}>{completionResult.transcript.filter(m => m.role === 'user').length}</p>
+                <p style={{ fontSize: 10, color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 3 }}>Responses</p>
               </div>
             )}
             {completionResult.proctoringViolations?.length > 0 && (
-              <div className="text-center">
-                <p className={`text-2xl font-bold ${completionResult.proctoringFlagged ? 'text-rose-400' : 'text-amber-400'}`}>
-                  {completionResult.proctoringViolations.length}
-                </p>
-                <p className="text-xs text-white/30 mt-1">
-                  {completionResult.proctoringFlagged ? 'Flagged' : 'Events'}
-                </p>
+              <div style={{ textAlign: 'center' }}>
+                <p style={{ fontSize: 20, fontWeight: 700, color: completionResult.proctoringFlagged ? '#f87171' : '#fb923c' }}>{completionResult.proctoringViolations.length}</p>
+                <p style={{ fontSize: 10, color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 3 }}>{completionResult.proctoringFlagged ? 'Flagged' : 'Events'}</p>
               </div>
             )}
           </div>
         )}
 
-        {/* Flagged or terminated note */}
         {(completionResult?.proctoringFlagged || wasTerminated) && (
-          <div className="mb-6 px-4 py-2 bg-rose-900/30 border border-rose-800/40 rounded-xl">
-            <p className="text-rose-400 text-xs text-center">
-              ⚠ This session has been flagged for integrity review.
-            </p>
+          <div style={{ padding: '8px 14px', background: '#1a0505', border: '1px solid #7f1d1d', borderRadius: 6, marginBottom: 16 }}>
+            <p style={{ fontSize: 11, color: '#f87171', textAlign: 'center', fontWeight: 600 }}>This session has been flagged for integrity review.</p>
           </div>
         )}
 
-        <div className="px-6 py-3 bg-white/5 border border-white/10 rounded-full text-sm text-white/40 mb-6">
-          Redirecting in {redirectCountdown}s…
+        <div style={{ padding: '8px 16px', background: '#0c0c0e', border: '1px solid #1f1f1f', borderRadius: 6, marginBottom: 14 }}>
+          <p style={{ fontSize: 12, color: '#52525b', textAlign: 'center' }}>Redirecting in {redirectCountdown}s…</p>
         </div>
-        <button onClick={() => navigate('/')} className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-full text-sm transition-all">
-          Go to Homepage Now
-        </button>
-      </FullScreenCard>
+        <button style={btnStyle} onClick={() => navigate('/')}>Go to homepage now</button>
+      </Shell>
     );
   }
 
   return null;
 };
 
-function FullScreenCard({ gradient, children }) {
+const titleStyle = { fontSize: 20, fontWeight: 700, color: '#fafafa', letterSpacing: '-0.01em', marginBottom: 8, fontFamily: 'Inter, system-ui, sans-serif' };
+const subtitleStyle = { fontSize: 13, color: '#71717a', lineHeight: 1.65, maxWidth: 320, margin: '0 auto 20px', fontFamily: 'Inter, system-ui, sans-serif' };
+const btnStyle = { padding: '9px 20px', background: 'transparent', border: '1px solid #27272a', borderRadius: 6, color: '#a1a1aa', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'Inter, system-ui, sans-serif', transition: 'border-color 0.15s' };
+
+function iconCircleStyle(border, bg) {
+  return { width: 52, height: 52, borderRadius: '50%', border: `1px solid ${border}`, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' };
+}
+
+function Shell({ children, accent }) {
   return (
-    <div className={`min-h-screen bg-gradient-to-br ${gradient} flex items-center justify-center p-6`}
-      style={{ fontFamily: "'Sora', sans-serif" }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700&display=swap');`}</style>
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-10 max-w-md w-full text-center shadow-2xl">
+    <div style={{ minHeight: '100vh', background: '#09090b', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <div style={{
+        background: '#0c0c0e',
+        border: `1px solid ${accent === 'red' ? '#3f1515' : accent === 'amber' ? '#3f2200' : accent === 'green' ? '#0a2a0a' : '#1f1f1f'}`,
+        borderRadius: 12, padding: '36px 32px', maxWidth: 400, width: '100%', textAlign: 'center',
+        fontFamily: 'Inter, system-ui, sans-serif',
+      }}>
         {children}
       </div>
     </div>

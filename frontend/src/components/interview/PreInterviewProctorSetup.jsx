@@ -1,24 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  PreInterviewProctorSetup
-//
-//  MANDATORY before the interview starts:
-//   1. Camera allowed + face detected
-//   2. Microphone allowed + audio detected
-//   3. Fullscreen REQUIRED (mandatory, not optional)
-//   4. Candidate agrees to rules
-//
-//  Fullscreen note:
-//   - Browser fullscreen API does NOT hard-block tab switching at the OS level,
-//     but it does:
-//       a) Trigger the fullscreenchange event when they exit (logged as violation)
-//       b) Make tab switching visually detectable via visibilitychange
-//     We combine fullscreen + visibilitychange + blur to aggressively detect it.
-//
-//  Props: candidateName, jobTitle, companyName, totalQuestions, durationMins,
-//         onReady, onAbort
-// ─────────────────────────────────────────────────────────────────────────────
 export default function PreInterviewProctorSetup({
   candidateName = 'Candidate',
   jobTitle = 'Interview',
@@ -29,32 +10,26 @@ export default function PreInterviewProctorSetup({
   onAbort,
 }) {
   const [step, setStep] = useState('instructions');
-  // 'instructions' | 'checks'
-
-  // ── Check states ───────────────────────────────────────────────────────────
   const [cameraOk, setCameraOk] = useState(false);
-  const [micOk, setMicOk]       = useState(false);
-  const [fsOk, setFsOk]         = useState(false);
-  const [agreed, setAgreed]     = useState(false);
+  const [micOk, setMicOk] = useState(false);
+  const [fsOk, setFsOk] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [cameraErr, setCameraErr] = useState('');
   const [audioLevel, setAudioLevel] = useState(0);
   const [faceDetected, setFaceDetected] = useState(false);
-  const [fsError, setFsError]   = useState('');
-  const [requesting, setRequesting] = useState(false); // fullscreen in progress
+  const [fsError, setFsError] = useState('');
+  const [requesting, setRequesting] = useState(false);
 
-  const videoRef    = useRef(null);
-  const streamRef   = useRef(null);
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
   const audioCtxRef = useRef(null);
   const audioAnimRef = useRef(null);
 
-  // ── All checks required ────────────────────────────────────────────────────
   const allPassed = cameraOk && micOk && fsOk && agreed;
 
-  // ── Media: camera + mic ────────────────────────────────────────────────────
   useEffect(() => {
     if (step !== 'checks') return;
     let active = true;
-
     (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -65,11 +40,7 @@ export default function PreInterviewProctorSetup({
         streamRef.current = stream;
         if (videoRef.current) videoRef.current.srcObject = stream;
         setCameraOk(true);
-
-        // Face detected heuristic — lightweight; full model runs during interview
         setTimeout(() => { if (active) setFaceDetected(true); }, 1500);
-
-        // Audio analyser for mic level
         const ctx = new (window.AudioContext || window.webkitAudioContext)();
         audioCtxRef.current = ctx;
         const src = ctx.createMediaStreamSource(stream);
@@ -77,28 +48,21 @@ export default function PreInterviewProctorSetup({
         analyser.fftSize = 256;
         src.connect(analyser);
         const buf = new Uint8Array(analyser.frequencyBinCount);
-
         const tick = () => {
           analyser.getByteFrequencyData(buf);
           const avg = buf.reduce((s, v) => s + v, 0) / buf.length;
           const level = Math.min(100, (avg / 128) * 100);
-          if (active) {
-            setAudioLevel(level);
-            if (level > 8) setMicOk(true);
-          }
+          if (active) { setAudioLevel(level); if (level > 8) setMicOk(true); }
           audioAnimRef.current = requestAnimationFrame(tick);
         };
         audioAnimRef.current = requestAnimationFrame(tick);
       } catch (err) {
         if (!active) return;
-        if (err.name === 'NotAllowedError') {
-          setCameraErr('Camera and microphone access was denied. Please allow them in your browser settings and reload the page.');
-        } else {
-          setCameraErr('Could not access your camera or microphone: ' + err.message);
-        }
+        setCameraErr(err.name === 'NotAllowedError'
+          ? 'Camera and microphone access denied. Allow them in your browser settings and reload.'
+          : 'Could not access camera or microphone: ' + err.message);
       }
     })();
-
     return () => {
       active = false;
       cancelAnimationFrame(audioAnimRef.current);
@@ -107,11 +71,10 @@ export default function PreInterviewProctorSetup({
     };
   }, [step]);
 
-  // ── Fullscreen tracking ────────────────────────────────────────────────────
   useEffect(() => {
     const onFsChange = () => {
       setFsOk(!!document.fullscreenElement);
-      if (!document.fullscreenElement) setFsError('Fullscreen exited. Please re-enter fullscreen to continue.');
+      if (!document.fullscreenElement) setFsError('Fullscreen exited. Re-enter to continue.');
       else setFsError('');
     };
     document.addEventListener('fullscreenchange', onFsChange);
@@ -119,20 +82,12 @@ export default function PreInterviewProctorSetup({
   }, []);
 
   const requestFs = async () => {
-    setRequesting(true);
-    setFsError('');
-    try {
-      await document.documentElement.requestFullscreen();
-      setFsOk(true);
-    } catch {
-      setFsError('Fullscreen was not allowed. Please click the button again and accept the fullscreen prompt.');
-      setFsOk(false);
-    } finally {
-      setRequesting(false);
-    }
+    setRequesting(true); setFsError('');
+    try { await document.documentElement.requestFullscreen(); setFsOk(true); }
+    catch { setFsError('Fullscreen not allowed. Click the button again and accept the prompt.'); setFsOk(false); }
+    finally { setRequesting(false); }
   };
 
-  // ── Start interview (release setup stream first) ───────────────────────────
   const handleStart = useCallback(() => {
     streamRef.current?.getTracks().forEach(t => t.stop());
     audioCtxRef.current?.close();
@@ -140,269 +95,218 @@ export default function PreInterviewProctorSetup({
     onReady?.();
   }, [onReady]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  const RULES = [
+    { icon: <FsIcon />, color: '#f97316', title: 'Fullscreen required', body: 'You cannot exit fullscreen during the interview. Exiting is flagged immediately.' },
+    { icon: <TabIcon />, color: '#eab308', title: 'No tab switching', body: '3 warnings trigger automatic termination. All events are logged permanently.' },
+    { icon: <FaceIcon />, color: '#a78bfa', title: 'One person only', body: 'Multiple faces in frame = immediate violation. Be alone in a private space.' },
+    { icon: <MicIcon />, color: '#2dd4bf', title: 'One voice only', body: 'Your voice must be the only one audible. Background conversation is detected.' },
+    { icon: <CamIcon />, color: '#60a5fa', title: 'Camera always on', body: 'Keep your face fully visible. Any absence from frame is flagged.' },
+    { icon: <RecIcon />, color: '#f472b6', title: 'Fully recorded', body: 'Session is recorded. All violations and responses are reviewed by the hiring team.' },
+  ];
+
   return (
     <div
-      className="min-h-screen bg-[#070711] text-white flex flex-col items-center justify-center p-6 relative overflow-hidden"
-      style={{ fontFamily: "'DM Mono', monospace" }}
+      className="min-h-screen flex flex-col items-center justify-center p-6"
+      style={{ background: '#09090b', fontFamily: 'Inter, system-ui, sans-serif', color: '#e4e4e7' }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Sora:wght@300;400;600;700&display=swap');
-        .sora { font-family: 'Sora', sans-serif; }
-
-        @keyframes fadeUp { from{opacity:0;transform:translateY(18px)} to{opacity:1;transform:translateY(0)} }
-        .fu  { animation: fadeUp .5s ease both; }
-        .fu1 { animation-delay:.05s }
-        .fu2 { animation-delay:.12s }
-        .fu3 { animation-delay:.20s }
-        .fu4 { animation-delay:.28s }
-        .fu5 { animation-delay:.36s }
-        .fu6 { animation-delay:.44s }
-        .fu7 { animation-delay:.52s }
-
-        .grid-bg {
-          background-image:
-            linear-gradient(rgba(255,255,255,.04) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,.04) 1px, transparent 1px);
-          background-size: 44px 44px;
-        }
-        .scl::after {
-          content:''; position:absolute; inset:0; border-radius:inherit;
-          background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(255,255,255,.012) 2px,rgba(255,255,255,.012) 4px);
-          pointer-events:none;
-        }
-        .check-glow { box-shadow: 0 0 0 1px rgba(52,211,153,.3), 0 0 20px rgba(52,211,153,.12); }
-        .warn-glow  { box-shadow: 0 0 0 1px rgba(245,158,11,.3), 0 0 20px rgba(245,158,11,.10); }
-        .err-glow   { box-shadow: 0 0 0 1px rgba(244,63,94,.3),  0 0 20px rgba(244,63,94,.10); }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { box-sizing: border-box; }
+        .pi-btn-primary { background: #fafafa; color: #09090b; border: none; border-radius: 6px; padding: 9px 20px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; font-family: inherit; }
+        .pi-btn-primary:hover { opacity: .88; }
+        .pi-btn-primary:disabled { background: #27272a; color: #52525b; cursor: not-allowed; opacity: 1; }
+        .pi-btn-ghost { background: transparent; color: #71717a; border: 1px solid #27272a; border-radius: 6px; padding: 9px 16px; font-size: 13px; font-weight: 500; cursor: pointer; transition: border-color .15s, color .15s; font-family: inherit; }
+        .pi-btn-ghost:hover { border-color: #52525b; color: #a1a1aa; }
+        .pi-btn-warn { background: #1c1200; color: #fbbf24; border: 1px solid #854d0e; border-radius: 6px; padding: 8px 14px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; transition: background .15s; width: 100%; }
+        .pi-btn-warn:hover { background: #292105; }
       `}</style>
 
-      {/* Backgrounds */}
-      <div className="absolute inset-0 grid-bg opacity-100" />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] rounded-full opacity-[.07]"
-        style={{ background: 'radial-gradient(circle, #6366f1 0%, transparent 65%)' }} />
-
-      {/* ── STEP 1: Instructions ─────────────────────────────────────────── */}
       {step === 'instructions' && (
-        <div className="relative z-10 max-w-2xl w-full">
-          {/* Badge */}
-          <div className="flex justify-center mb-8 fu fu1">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/10">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse inline-block" />
-              <span className="dm-mono text-xs text-indigo-400 tracking-widest uppercase">Proctored · Secure Interview</span>
-            </span>
+        <div style={{ maxWidth: 680, width: '100%' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', border: '1px solid #3f3f46', borderRadius: 4, marginBottom: 20 }}>
+            <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#a78bfa' }} />
+            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', color: '#a78bfa', textTransform: 'uppercase' }}>Proctored Interview</span>
           </div>
 
-          <h1 className="sora text-3xl font-bold text-center text-white mb-1 fu fu2">Before you begin</h1>
-          <p className="text-center text-white/35 dm-mono text-xs tracking-wide mb-1 fu fu2">
-            {[companyName, jobTitle].filter(Boolean).join(' · ')}
-          </p>
-          <p className="text-center text-white/25 dm-mono text-[10px] mb-8 fu fu2">
-            Hi {candidateName} — read and accept these rules before continuing.
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 4, color: '#fafafa' }}>Before you begin</h1>
+          <p style={{ fontSize: 13, color: '#71717a', marginBottom: 24 }}>
+            {[companyName, jobTitle].filter(Boolean).join(' · ')} &nbsp;·&nbsp; Hi {candidateName}, read these rules carefully before continuing.
           </p>
 
-          {/* Rules */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
-            {[
-              { delay:'fu3', color:'text-violet-400 border-violet-500/25 bg-violet-500/8', icon:<FsIcon/>, title:'Fullscreen — Mandatory', body:'The interview runs in fullscreen mode. You cannot exit fullscreen. Exiting will be flagged and may terminate the session.' },
-              { delay:'fu3', color:'text-amber-400 border-amber-500/25 bg-amber-500/8',   icon:<TabIcon/>, title:'No tab switching', body:'Switching tabs or windows triggers a warning. You will NOT be able to switch tabs. After 3 warnings the interview terminates automatically.' },
-              { delay:'fu4', color:'text-blue-400 border-blue-500/25 bg-blue-500/8',       icon:<CamIcon/>, title:'Camera required', body:'Keep your face clearly visible at all times. Any absence from the frame is a violation.' },
-              { delay:'fu4', color:'text-emerald-400 border-emerald-500/25 bg-emerald-500/8', icon:<MicIcon/>, title:'Microphone on', body:'Only your voice should be audible. Multiple voices detected simultaneously count as a violation.' },
-              { delay:'fu5', color:'text-rose-400 border-rose-500/25 bg-rose-500/8',       icon:<FaceIcon/>, title:'One person only', body:'Multiple faces in the camera frame will immediately count as a violation. Ensure you are alone in a private room.' },
-              { delay:'fu5', color:'text-cyan-400 border-cyan-500/25 bg-cyan-500/8',        icon:<RecIcon/>, title:'Recorded & monitored', body:'This session is fully recorded. All violations are logged and reviewed by the hiring team along with your responses.' },
-            ].map(({ delay, color, icon, title, body }) => (
-              <div key={title} className={`fu ${delay} p-4 rounded-xl border bg-white/[.018] ${color} flex gap-3`}>
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 border ${color}`}>{icon}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+            {RULES.map(({ icon, color, title, body }) => (
+              <div key={title} style={{ padding: '12px 14px', border: '1px solid #27272a', borderRadius: 8, background: '#111113', display: 'flex', gap: 12 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #27272a', background: '#0a0a0b', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color }}>
+                  {icon}
+                </div>
                 <div>
-                  <p className="sora text-[13px] font-semibold text-white/80 mb-0.5">{title}</p>
-                  <p className="dm-mono text-[10px] text-white/30 leading-relaxed">{body}</p>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e7', marginBottom: 3 }}>{title}</p>
+                  <p style={{ fontSize: 11, color: '#52525b', lineHeight: 1.55 }}>{body}</p>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Warning notice */}
-          <div className="fu fu6 mb-6 p-4 rounded-xl border border-rose-500/25 bg-rose-500/8 flex gap-3 items-start">
-            <svg className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-            <p className="dm-mono text-[11px] text-rose-300/80 leading-relaxed">
-              <span className="text-rose-300 font-bold">3 warnings = automatic termination.</span> Violations include: tab switching, fullscreen exit, multiple faces detected, multiple voices detected, or face not visible. All violations are sent to the recruiter.
+          <div style={{ padding: '10px 14px', border: '1px solid #3f1515', borderRadius: 6, background: '#110808', marginBottom: 20, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+            <WarningIcon style={{ color: '#f87171', flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12, color: '#fca5a5', lineHeight: 1.6 }}>
+              <strong style={{ color: '#f87171' }}>3 warnings triggers automatic termination.</strong> Violations include tab switching, fullscreen exit, multiple faces, and multiple voices. All violations are sent to the recruiter.
             </p>
           </div>
 
-          {/* Session info */}
-          <div className="fu fu6 flex items-center justify-center gap-6 mb-8 p-3 rounded-xl border border-white/8 bg-white/[.018]">
-            {[['Questions', totalQuestions],['Duration',`~${durationMins} min`],['Mode','AI Voice'],['Proctored','Yes']].map(([l,v])=>(
-              <div key={l} className="text-center">
-                <p className="sora text-sm font-bold text-white/70">{v}</p>
-                <p className="dm-mono text-[9px] text-white/25 uppercase tracking-wider mt-0.5">{l}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="fu fu7 flex gap-3 justify-center">
-            <button onClick={()=>onAbort?.()} className="sora px-6 py-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/40 hover:text-white/70 text-sm transition-all">
-              I'm not ready
-            </button>
-            <button onClick={()=>setStep('checks')} className="sora px-10 py-3 rounded-full bg-white text-black font-semibold text-sm hover:bg-white/90 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,.1)]">
-              I understand — Continue →
-            </button>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', border: '1px solid #1f1f1f', borderRadius: 6, background: '#0c0c0e', marginBottom: 20 }}>
+            <div style={{ display: 'flex', gap: 24 }}>
+              {[['Questions', totalQuestions], ['Duration', `~${durationMins}m`], ['Mode', 'AI Voice'], ['Proctored', 'Yes']].map(([l, v]) => (
+                <div key={l} style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: '#fafafa' }}>{v}</p>
+                  <p style={{ fontSize: 10, color: '#52525b', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>{l}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="pi-btn-ghost" onClick={() => onAbort?.()}>Not ready</button>
+              <button className="pi-btn-primary" onClick={() => setStep('checks')}>Continue →</button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ── STEP 2: System checks ─────────────────────────────────────────── */}
       {step === 'checks' && (
-        <div className="relative z-10 max-w-3xl w-full">
-          <div className="text-center mb-6 fu fu1">
-            <h2 className="sora text-2xl font-bold text-white mb-1">System Check</h2>
-            <p className="dm-mono text-xs text-white/30 tracking-wider">All checks below are mandatory before the interview can begin</p>
+        <div style={{ maxWidth: 720, width: '100%' }}>
+          <div style={{ marginBottom: 20 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fafafa', letterSpacing: '-0.01em', marginBottom: 3 }}>System check</h2>
+            <p style={{ fontSize: 12, color: '#52525b' }}>All checks are mandatory. The interview cannot begin until everything passes.</p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-
-            {/* ── Left: Camera ─────────────────────────────────────────── */}
-            <div className="fu fu2 space-y-3">
-              <SectionLabel>Camera Preview</SectionLabel>
-
-              {/* Video feed */}
-              <div className={`relative rounded-xl overflow-hidden border scl ${cameraErr ? 'border-rose-700/60 err-glow' : cameraOk ? 'border-emerald-700/40 check-glow' : 'border-white/10'} bg-black`} style={{aspectRatio:'16/9'}}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            {/* Camera column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <SectionLabel>Camera preview</SectionLabel>
+              <div
+                style={{
+                  position: 'relative', borderRadius: 8, overflow: 'hidden',
+                  border: `1px solid ${cameraErr ? '#7f1d1d' : cameraOk ? '#14532d' : '#27272a'}`,
+                  background: '#0a0a0b', aspectRatio: '16/9',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
                 {cameraErr ? (
-                  <div className="absolute inset-0 flex items-center justify-center p-6 text-center">
-                    <div>
-                      <svg className="w-10 h-10 text-rose-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="1.5">
-                        <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-                        <line x1="1" y1="1" x2="23" y2="23" strokeWidth="2"/>
-                      </svg>
-                      <p className="sora text-rose-400 text-sm font-semibold mb-1">Camera blocked</p>
-                      <p className="dm-mono text-white/30 text-[10px] leading-relaxed">{cameraErr}</p>
-                    </div>
+                  <div style={{ textAlign: 'center', padding: '0 16px' }}>
+                    <CamBlockedIcon />
+                    <p style={{ fontSize: 12, fontWeight: 600, color: '#f87171', marginBottom: 4, marginTop: 8 }}>Camera blocked</p>
+                    <p style={{ fontSize: 11, color: '#52525b', lineHeight: 1.5 }}>{cameraErr}</p>
                   </div>
                 ) : (
-                  <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover" style={{transform:'scaleX(-1)'}}/>
+                  <video ref={videoRef} autoPlay muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }} />
                 )}
                 {cameraOk && (
-                  <>
-                    {/* Face badge */}
-                    <div className={`absolute top-2 left-2 flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] dm-mono ${faceDetected ? 'bg-emerald-900/80 text-emerald-300' : 'bg-amber-900/80 text-amber-300'}`}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${faceDetected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}/>
-                      {faceDetected ? '✓ Face detected' : 'Looking for face…'}
-                    </div>
-                    {/* Live dot */}
-                    <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/60 px-1.5 py-0.5 rounded">
-                      <div className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse"/>
-                      <span className="dm-mono text-[9px] text-white/50">LIVE</span>
-                    </div>
-                  </>
+                  <div style={{ position: 'absolute', top: 8, left: 8, display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,0,0,0.75)', padding: '3px 7px', borderRadius: 4 }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: faceDetected ? '#22c55e' : '#f59e0b' }} />
+                    <span style={{ fontSize: 9, color: '#a1a1aa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      {faceDetected ? 'Face detected' : 'Searching…'}
+                    </span>
+                  </div>
                 )}
               </div>
-
-              <CheckRow ok={cameraOk} bad={!!cameraErr} label="Camera access granted" mandatory />
-              <CheckRow ok={faceDetected && cameraOk} bad={false} label="Face detected in frame" mandatory />
+              <CheckRow ok={cameraOk} bad={!!cameraErr} label="Camera access granted" required />
+              <CheckRow ok={faceDetected && cameraOk} bad={false} label="Face visible in frame" required />
             </div>
 
-            {/* ── Right: Checks ─────────────────────────────────────────── */}
-            <div className="fu fu3 space-y-4">
+            {/* Right column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <SectionLabel>Audio & permissions</SectionLabel>
 
-              {/* Mic level */}
-              <div className={`p-4 rounded-xl border ${micOk ? 'border-emerald-700/40 check-glow' : cameraErr ? 'border-rose-700/40' : 'border-white/10'} bg-white/[.02]`}>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="sora text-sm font-semibold text-white/70">Microphone</p>
-                  {micOk
-                    ? <StatusBadge ok>Audio detected ✓</StatusBadge>
-                    : <StatusBadge pending>Say something to test…</StatusBadge>
-                  }
+              {/* Mic */}
+              <div style={{
+                padding: '12px 14px', borderRadius: 8, background: '#0a0a0b',
+                border: `1px solid ${micOk ? '#14532d' : cameraErr ? '#7f1d1d' : '#27272a'}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e7' }}>Microphone</p>
+                  <StatusBadge ok={micOk} warn={!micOk && !cameraErr}>
+                    {micOk ? 'Detected' : 'Say something…'}
+                  </StatusBadge>
                 </div>
-                {/* Bar visualiser */}
-                <div className="flex items-end gap-0.5 h-10 mb-2">
-                  {[...Array(24)].map((_,i)=>{
-                    const thr = (i/24)*100;
-                    const on = audioLevel > thr;
-                    return <div key={i} className={`flex-1 rounded-sm transition-all duration-75 ${on ? (audioLevel>75?'bg-rose-400':audioLevel>40?'bg-emerald-400':'bg-emerald-700') : 'bg-white/8'}`} style={{height:`${Math.max(12,(i%3===0?65:i%2===0?42:30))}%`}}/>;
-                  })}
-                </div>
-                <p className="dm-mono text-[10px] text-white/20">
-                  {micOk ? '✓ Microphone is working correctly' : 'Speak normally — the bars should react to your voice'}
+                <MicBars level={audioLevel} />
+                <p style={{ fontSize: 10, color: '#3f3f46', marginTop: 6 }}>
+                  {micOk ? 'Microphone is working correctly.' : 'Speak normally — bars should react to your voice.'}
                 </p>
               </div>
 
-              {/* Fullscreen — MANDATORY */}
-              <div className={`p-4 rounded-xl border ${fsOk ? 'border-emerald-700/40 check-glow' : fsError ? 'border-rose-700/40 err-glow' : 'border-amber-700/40 warn-glow'} bg-white/[.02]`}>
-                <div className="flex items-center justify-between mb-2">
+              {/* Fullscreen */}
+              <div style={{
+                padding: '12px 14px', borderRadius: 8, background: '#0a0a0b',
+                border: `1px solid ${fsOk ? '#14532d' : '#854d0e'}`,
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                   <div>
-                    <p className="sora text-sm font-semibold text-white/70">Fullscreen Mode</p>
-                    <p className="dm-mono text-[10px] text-rose-400/80 uppercase tracking-wider">Required — cannot be skipped</p>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: '#e4e4e7' }}>Fullscreen mode</p>
+                    <p style={{ fontSize: 10, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, marginTop: 1 }}>Mandatory</p>
                   </div>
-                  {fsOk
-                    ? <StatusBadge ok>Active ✓</StatusBadge>
-                    : <StatusBadge warn>Not active</StatusBadge>
-                  }
+                  <StatusBadge ok={fsOk} warn={!fsOk}>{fsOk ? 'Active' : 'Not active'}</StatusBadge>
                 </div>
-                {fsError && <p className="dm-mono text-[10px] text-rose-400 mb-2 leading-relaxed">{fsError}</p>}
-                {!fsOk ? (
-                  <button onClick={requestFs} disabled={requesting}
-                    className="w-full py-2.5 rounded-lg border border-violet-500/40 bg-violet-500/15 text-violet-300 text-sm dm-mono hover:bg-violet-500/25 active:scale-95 transition-all disabled:opacity-50">
-                    {requesting ? 'Requesting…' : '⛶  Enter Fullscreen'}
-                  </button>
-                ) : (
-                  <div className="py-2 text-center dm-mono text-xs text-white/30">Fullscreen is active — do not exit during the interview</div>
-                )}
+                {fsError && <p style={{ fontSize: 11, color: '#fca5a5', marginBottom: 6, lineHeight: 1.5 }}>{fsError}</p>}
+                {!fsOk
+                  ? <button className="pi-btn-warn" onClick={requestFs} disabled={requesting}>{requesting ? 'Requesting…' : 'Enter fullscreen'}</button>
+                  : <p style={{ fontSize: 11, color: '#3f3f46', textAlign: 'center', padding: '4px 0' }}>Fullscreen active — do not exit during the interview</p>
+                }
               </div>
 
-              {/* Tab-switch policy info box */}
-              <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/6">
-                <p className="sora text-xs font-semibold text-amber-400 mb-1.5">Tab-switch protection active during interview</p>
-                <p className="dm-mono text-[10px] text-amber-300/60 leading-relaxed">
-                  Once the interview starts, tab switching is monitored. Each switch = 1 warning. At <strong className="text-amber-300">3 warnings</strong> the session is automatically terminated and flagged.
-                </p>
-              </div>
-
-              {/* Agree checkbox */}
-              <label className="flex items-start gap-3 cursor-pointer group select-none">
-                <div onClick={()=>setAgreed(a=>!a)}
-                  className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer ${agreed ? 'bg-white border-white' : 'border-white/20 bg-white/5 group-hover:border-white/40'}`}>
-                  {agreed && (
-                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                      <polyline points="2,6 5,9 10,3" stroke="black" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  )}
+              {/* Agree */}
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', padding: '10px 12px', border: '1px solid #1f1f1f', borderRadius: 8, background: '#0c0c0e' }}>
+                <div
+                  onClick={() => setAgreed(a => !a)}
+                  style={{
+                    width: 16, height: 16, borderRadius: 3, flexShrink: 0, marginTop: 1, cursor: 'pointer',
+                    border: `1px solid ${agreed ? '#fafafa' : '#52525b'}`,
+                    background: agreed ? '#fafafa' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  {agreed && <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#09090b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>}
                 </div>
-                <p className="sora text-xs text-white/40 group-hover:text-white/60 transition-colors leading-relaxed mt-0.5">
-                  I have read and accept all proctoring rules. I understand that violations including tab switching, multiple faces, multiple voices, and fullscreen exit will be logged and may result in immediate termination.
+                <p style={{ fontSize: 11, color: '#71717a', lineHeight: 1.6, marginTop: 0 }}>
+                  I have read and accept all proctoring rules. I understand that violations are logged and may result in immediate session termination.
                 </p>
               </label>
+
+              {/* Status summary */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Camera', ok: cameraOk, bad: !!cameraErr },
+                  { label: 'Mic', ok: micOk, bad: false },
+                  { label: 'Face', ok: faceDetected && cameraOk, bad: false },
+                  { label: 'Fullscreen', ok: fsOk, bad: !!fsError },
+                  { label: 'Agreed', ok: agreed, bad: false },
+                ].map(({ label, ok, bad }) => (
+                  <div key={label} style={{
+                    display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px',
+                    border: `1px solid ${bad ? '#7f1d1d' : ok ? '#14532d' : '#1f1f1f'}`,
+                    borderRadius: 4, background: bad ? '#110808' : ok ? '#0a1a0a' : '#0c0c0e',
+                  }}>
+                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: bad ? '#ef4444' : ok ? '#22c55e' : '#3f3f46' }} />
+                    <span style={{ fontSize: 10, fontWeight: 600, color: bad ? '#f87171' : ok ? '#4ade80' : '#52525b' }}>{label}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                <button className="pi-btn-ghost" onClick={() => setStep('instructions')} style={{ flex: 1 }}>← Back</button>
+                <button
+                  className="pi-btn-primary"
+                  onClick={handleStart}
+                  disabled={!allPassed}
+                  style={{ flex: 2 }}
+                >
+                  {!cameraOk || !!cameraErr ? 'Waiting for camera…'
+                    : !micOk ? 'Speak to verify mic…'
+                    : !faceDetected ? 'Detecting face…'
+                    : !fsOk ? 'Enter fullscreen first'
+                    : !agreed ? 'Accept rules to continue'
+                    : 'Begin interview →'}
+                </button>
+              </div>
             </div>
-          </div>
-
-          {/* Mandatory checks summary */}
-          <div className="mt-5 flex items-center justify-center gap-3 flex-wrap">
-            <MiniCheck ok={cameraOk}  bad={!!cameraErr} label="Camera"/>
-            <MiniCheck ok={micOk}     bad={false}       label="Microphone"/>
-            <MiniCheck ok={faceDetected && cameraOk} bad={false} label="Face"/>
-            <MiniCheck ok={fsOk}      bad={!!fsError}   label="Fullscreen"/>
-            <MiniCheck ok={agreed}    bad={false}       label="Agreed"/>
-          </div>
-
-          {/* CTA */}
-          <div className="flex gap-3 justify-center mt-6">
-            <button onClick={()=>setStep('instructions')} className="sora px-6 py-3 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 text-white/40 text-sm transition-all">
-              ← Back
-            </button>
-            <button
-              onClick={handleStart}
-              disabled={!allPassed}
-              className={`sora px-10 py-3 rounded-full font-semibold text-sm transition-all ${allPassed ? 'bg-white text-black hover:bg-white/90 active:scale-95 shadow-[0_0_30px_rgba(255,255,255,.12)]' : 'bg-white/8 text-white/20 cursor-not-allowed'}`}
-            >
-              {!cameraOk || !!cameraErr ? 'Waiting for camera…'
-                : !micOk               ? 'Speak to verify mic…'
-                : !faceDetected        ? 'Detecting your face…'
-                : !fsOk                ? 'Enter fullscreen first'
-                : !agreed              ? 'Please agree to continue'
-                : "Begin Interview →"}
-            </button>
           </div>
         </div>
       )}
@@ -410,52 +314,58 @@ export default function PreInterviewProctorSetup({
   );
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
 function SectionLabel({ children }) {
-  return <p className="dm-mono text-[10px] text-white/30 uppercase tracking-widest">{children}</p>;
+  return <p style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#52525b', marginBottom: 4 }}>{children}</p>;
 }
 
-function CheckRow({ ok, bad, label, mandatory }) {
+function CheckRow({ ok, bad, label, required }) {
   return (
-    <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-white/8 bg-white/[.015]">
-      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${bad?'bg-rose-900/60':ok?'bg-emerald-900/60':'bg-white/5'}`}>
-        {bad ? <XSvg/> : ok ? <CheckSvg/> : <div className="w-2 h-2 rounded-full bg-white/20 animate-pulse"/>}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', border: `1px solid ${bad ? '#7f1d1d' : ok ? '#14532d' : '#1f1f1f'}`, borderRadius: 6, background: '#0c0c0e' }}>
+      <div style={{ width: 16, height: 16, borderRadius: '50%', background: bad ? '#7f1d1d' : ok ? '#14532d' : '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {bad ? <XSvg /> : ok ? <CheckSvg /> : <div style={{ width: 5, height: 5, borderRadius: '50%', background: '#3f3f46' }} />}
       </div>
-      <span className={`dm-mono text-xs ${bad?'text-rose-400':ok?'text-white/50':'text-white/25'}`}>{label}</span>
-      {mandatory && <span className="dm-mono text-[9px] text-rose-500/70 uppercase tracking-wider ml-auto">required</span>}
+      <span style={{ fontSize: 11, color: bad ? '#f87171' : ok ? '#a1a1aa' : '#52525b', flex: 1 }}>{label}</span>
+      {required && <span style={{ fontSize: 9, color: '#ef4444', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>required</span>}
     </div>
   );
 }
 
-function MiniCheck({ ok, bad, label }) {
+function StatusBadge({ ok, warn, children }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <div className={`w-4 h-4 rounded-full flex items-center justify-center ${bad?'bg-rose-900/60':ok?'bg-emerald-900/60':'bg-white/5'}`}>
-        {bad ? <XSvg w={8}/> : ok ? <CheckSvg w={8}/> : <div className="w-1.5 h-1.5 rounded-full bg-white/20 animate-pulse"/>}
-      </div>
-      <span className={`dm-mono text-[10px] ${bad?'text-rose-400':ok?'text-white/45':'text-white/20'}`}>{label}</span>
+    <span style={{
+      fontSize: 10, padding: '2px 8px', borderRadius: 3, fontWeight: 600,
+      background: ok ? '#14532d' : warn ? '#451a03' : '#1a1a1a',
+      color: ok ? '#4ade80' : warn ? '#fb923c' : '#71717a',
+    }}>{children}</span>
+  );
+}
+
+function MicBars({ level }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 32 }}>
+      {Array.from({ length: 20 }, (_, i) => {
+        const threshold = (i / 20) * 100;
+        const on = level > threshold;
+        return (
+          <div key={i} style={{
+            flex: 1, borderRadius: 2,
+            background: on ? (level > 75 ? '#ef4444' : level > 40 ? '#22c55e' : '#15803d') : '#1f1f1f',
+            height: `${Math.max(15, (i % 3 === 0 ? 70 : i % 2 === 0 ? 45 : 30))}%`,
+            transition: 'background .1s',
+          }} />
+        );
+      })}
     </div>
   );
 }
 
-function StatusBadge({ ok, warn, pending, children }) {
-  return (
-    <span className={`dm-mono text-[10px] px-2 py-0.5 rounded-full border ${ok?'border-emerald-700/50 bg-emerald-900/30 text-emerald-400':warn?'border-amber-700/50 bg-amber-900/30 text-amber-400':'border-white/10 bg-white/5 text-white/30'}`}>
-      {pending ? <span className="animate-pulse">{children}</span> : children}
-    </span>
-  );
-}
-
-function CheckSvg({ w=10 }) {
-  return <svg width={w} height={w} viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#34d399" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>;
-}
-function XSvg({ w=10 }) {
-  return <svg width={w} height={w} viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#f43f5e" strokeWidth="1.8" strokeLinecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#f43f5e" strokeWidth="1.8" strokeLinecap="round"/></svg>;
-}
-
-function FsIcon()   { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>; }
-function TabIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>; }
-function CamIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>; }
-function MicIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>; }
-function FaceIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 10-16 0"/></svg>; }
-function RecIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>; }
+function CheckSvg() { return <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><polyline points="2,6 5,9 10,3" stroke="#4ade80" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>; }
+function XSvg() { return <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><line x1="2" y1="2" x2="10" y2="10" stroke="#f43f5e" strokeWidth="1.8" strokeLinecap="round" /><line x1="10" y1="2" x2="2" y2="10" stroke="#f43f5e" strokeWidth="1.8" strokeLinecap="round" /></svg>; }
+function WarningIcon({ style }) { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={style}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>; }
+function CamBlockedIcon() { return <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#3f3f46" strokeWidth="1.5" style={{ margin: '0 auto', display: 'block' }}><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /><line x1="1" y1="1" x2="23" y2="23" strokeWidth="1.5" /></svg>; }
+function FsIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" /></svg>; }
+function TabIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>; }
+function CamIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>; }
+function MicIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" /><path d="M19 10v2a7 7 0 01-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>; }
+function FaceIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 10-16 0" /></svg>; }
+function RecIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>; }
